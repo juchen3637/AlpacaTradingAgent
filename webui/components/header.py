@@ -12,8 +12,8 @@ def create_header():
             dbc.Row([
                 dbc.Col([
                     html.H1("AlpacaTradingAgent",
-                            className="text-center mb-0")
-                ], width=10),
+                            className="text-center mb-0 mobile-header-title")
+                ], xs=9, sm=10),
                 dbc.Col([
                     # Debug panel toggle button
                     dbc.Button(
@@ -27,8 +27,8 @@ def create_header():
                         className="float-end",
                         title="Open Debug Tools panel to view tool calls and prompts"
                     )
-                ], width=2, className="d-flex align-items-center justify-content-end")
-            ], align="center")
+                ], xs=3, sm=2, className="d-flex align-items-center justify-content-end")
+            ], align="center", className="mobile-header-row")
         ]),
-        className="mb-4"
+        className="mb-3 mb-md-4"
     ) 
