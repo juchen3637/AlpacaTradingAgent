@@ -344,11 +344,11 @@ class AlpacaUtils:
             return []
 
     @staticmethod
-    def get_recent_orders(page=1, page_size=7):
-        """Get recent orders from Alpaca account, with simple pagination."""
+    def get_recent_orders(limit=100):
+        """Get recent orders from Alpaca account, up to `limit` orders."""
         try:
             client = get_alpaca_trading_client()
-            req = GetOrdersRequest(status="all", limit=page_size * page, nested=False)
+            req = GetOrdersRequest(status="all", limit=limit, nested=False)
             orders_page = client.get_orders(req)
             orders = list(orders_page)
 
@@ -359,20 +359,24 @@ class AlpacaUtils:
                 filled_qty = float(order.filled_qty) if order.filled_qty is not None else 0.0
                 filled_avg_price = float(order.filled_avg_price) if order.filled_avg_price is not None else 0.0
 
+                # Timestamps as ISO strings (or None)
+                submitted_at = order.submitted_at.isoformat() if order.submitted_at is not None else None
+                filled_at = order.filled_at.isoformat() if order.filled_at is not None else None
+
                 orders_data.append({
                     "Asset": order.symbol,
-                    "Order Type": order.type,
-                    "Side": order.side,
+                    "Order Type": str(order.type.value) if hasattr(order.type, "value") else str(order.type),
+                    "Side": str(order.side.value) if hasattr(order.side, "value") else str(order.side),
                     "Qty": qty,
                     "Filled Qty": filled_qty,
                     "Avg. Fill Price": f"${filled_avg_price:.2f}" if filled_avg_price > 0 else "-",
-                    "Status": order.status,
-                    "Source": order.client_order_id
+                    "Status": str(order.status.value) if hasattr(order.status, "value") else str(order.status),
+                    "Source": order.client_order_id,
+                    "submitted_at": submitted_at,
+                    "filled_at": filled_at,
                 })
 
-            # Now slice out the exact page we want (newest first)
-            start = (page - 1) * page_size
-            return orders_data[start : start + page_size]
+            return orders_data
 
         except Exception as e:
             # Check if this is an authentication error
