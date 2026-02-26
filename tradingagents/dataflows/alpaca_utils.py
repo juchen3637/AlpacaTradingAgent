@@ -802,7 +802,7 @@ class AlpacaUtils:
                 side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
                 time_in_force=time_in_force,
                 order_class=OrderClass.BRACKET,
-                stop_loss=StopLossRequest(stop_price=stop_loss) if stop_loss else None,
+                stop_loss=StopLossRequest(stop_price=stop_loss, time_in_force=TimeInForce.GTC) if stop_loss else None,
                 take_profit=TakeProfitRequest(limit_price=take_profit) if take_profit else None
             )
 
@@ -815,7 +815,7 @@ class AlpacaUtils:
                 "qty": qty or "notional",
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
-                "message": f"Bracket order placed with stop ${stop_loss:.2f if stop_loss else 'N/A'}, target ${take_profit:.2f if take_profit else 'N/A'}"
+                "message": f"Bracket order placed with stop ${f'{stop_loss:.2f}' if stop_loss else 'N/A'}, target ${f'{take_profit:.2f}' if take_profit else 'N/A'}"
             }
         except Exception as e:
             return {
