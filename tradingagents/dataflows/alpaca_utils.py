@@ -828,6 +828,71 @@ class AlpacaUtils:
             }
 
     @staticmethod
+    def cancel_open_orders_for_symbol(symbol: str) -> dict:
+        """
+        Cancel all open orders for a given symbol.
+        Call this before closing or reversing a position to clean up
+        any orphaned bracket legs (stop-loss / take-profit orders).
+
+        Args:
+            symbol: Stock or crypto symbol (e.g. "AAPL", "BTC/USD")
+
+        Returns:
+            dict with keys:
+                success (bool): True if all cancellations succeeded (or there was nothing to cancel)
+                cancelled (int): Number of orders cancelled
+                failed (int): Number of cancellation failures
+                errors (list[str]): Error messages for any failures
+        """
+        try:
+            client = get_alpaca_trading_client()
+
+            # Normalize symbol for Alpaca (crypto uses "/" but Alpaca API uses "")
+            alpaca_symbol = symbol.replace("/", "")
+
+            # Fetch all open orders for this symbol
+            req = GetOrdersRequest(status="open", symbols=[alpaca_symbol], limit=50)
+            open_orders = list(client.get_orders(req))
+
+            if not open_orders:
+                print(f"[CANCEL ORDERS] No open orders found for {symbol}")
+                return {"success": True, "cancelled": 0, "failed": 0, "errors": []}
+
+            print(f"[CANCEL ORDERS] Found {len(open_orders)} open order(s) for {symbol} — cancelling...")
+
+            cancelled = 0
+            failed = 0
+            errors = []
+
+            for order in open_orders:
+                try:
+                    client.cancel_order_by_id(order.id)
+                    cancelled += 1
+                    print(f"[CANCEL ORDERS] ✅ Cancelled order {order.id} ({order.side} {order.qty} {order.symbol} @ {order.type})")
+                except Exception as e:
+                    failed += 1
+                    err = f"Failed to cancel order {order.id}: {e}"
+                    errors.append(err)
+                    print(f"[CANCEL ORDERS] ❌ {err}")
+
+            print(f"[CANCEL ORDERS] Done — {cancelled} cancelled, {failed} failed")
+            return {
+                "success": failed == 0,
+                "cancelled": cancelled,
+                "failed": failed,
+                "errors": errors
+            }
+
+        except Exception as e:
+            error_msg = f"Error fetching/cancelling open orders for {symbol}: {e}"
+            print(f"[CANCEL ORDERS] ❌ {error_msg}")
+            return {"success": False, "cancelled": 0, "failed": 0, "errors": [error_msg]}
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    @staticmethod
     def execute_trading_action(symbol: str, current_position: str, signal: str,
                              dollar_amount: float, allow_shorts: bool = False,
                              stop_loss: float = None, take_profit: list = None,
@@ -884,10 +949,18 @@ class AlpacaUtils:
                         results.append({"action": "hold", "message": f"Keeping LONG position in {symbol}"})
                     elif signal == "NEUTRAL":
                         # Close LONG position
+                        # Cancel any open orders (stop-loss / take-profit legs) before closing
+                        cancel_result = AlpacaUtils.cancel_open_orders_for_symbol(symbol)
+                        if not cancel_result["success"] or cancel_result["failed"] > 0:
+                            print(f"[EXECUTE] ⚠️  Some orders could not be cancelled for {symbol}: {cancel_result['errors']}")
                         close_result = AlpacaUtils.close_position(symbol)
                         results.append({"action": "close_long", "result": close_result})
                     elif signal == "SHORT":
                         # Close LONG and open SHORT
+                        # Cancel any open orders (stop-loss / take-profit legs) before closing
+                        cancel_result = AlpacaUtils.cancel_open_orders_for_symbol(symbol)
+                        if not cancel_result["success"] or cancel_result["failed"] > 0:
+                            print(f"[EXECUTE] ⚠️  Some orders could not be cancelled for {symbol}: {cancel_result['errors']}")
                         close_result = AlpacaUtils.close_position(symbol)
                         results.append({"action": "close_long", "result": close_result})
                         if close_result.get("success"):
@@ -945,10 +1018,18 @@ class AlpacaUtils:
                         results.append({"action": "hold", "message": f"Keeping SHORT position in {symbol}"})
                     elif signal == "NEUTRAL":
                         # Close SHORT position
+                        # Cancel any open orders (stop-loss / take-profit legs) before closing
+                        cancel_result = AlpacaUtils.cancel_open_orders_for_symbol(symbol)
+                        if not cancel_result["success"] or cancel_result["failed"] > 0:
+                            print(f"[EXECUTE] ⚠️  Some orders could not be cancelled for {symbol}: {cancel_result['errors']}")
                         close_result = AlpacaUtils.close_position(symbol)
                         results.append({"action": "close_short", "result": close_result})
                     elif signal == "LONG":
                         # Close SHORT and open LONG
+                        # Cancel any open orders (stop-loss / take-profit legs) before closing
+                        cancel_result = AlpacaUtils.cancel_open_orders_for_symbol(symbol)
+                        if not cancel_result["success"] or cancel_result["failed"] > 0:
+                            print(f"[EXECUTE] ⚠️  Some orders could not be cancelled for {symbol}: {cancel_result['errors']}")
                         close_result = AlpacaUtils.close_position(symbol)
                         results.append({"action": "close_short", "result": close_result})
                         if close_result.get("success"):
@@ -1212,6 +1293,10 @@ class AlpacaUtils:
                 elif signal == "SELL":
                     if has_position:
                         # Sell position
+                        # Cancel any open orders (stop-loss / take-profit legs) before closing
+                        cancel_result = AlpacaUtils.cancel_open_orders_for_symbol(symbol)
+                        if not cancel_result["success"] or cancel_result["failed"] > 0:
+                            print(f"[EXECUTE] ⚠️  Some orders could not be cancelled for {symbol}: {cancel_result['errors']}")
                         sell_result = AlpacaUtils.close_position(symbol)
                         results.append({"action": "sell", "result": sell_result})
                     else:
