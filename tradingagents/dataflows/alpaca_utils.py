@@ -409,6 +409,8 @@ class AlpacaUtils:
             return {
                 "buying_power": buying_power,
                 "cash": cash,
+                "equity": equity,
+                "last_equity": last_equity,
                 "daily_change_dollars": daily_change_dollars,
                 "daily_change_percent": daily_change_percent
             }
@@ -424,6 +426,8 @@ class AlpacaUtils:
             return {
                 "buying_power": 0,
                 "cash": 0,
+                "equity": 0,
+                "last_equity": 0,
                 "daily_change_dollars": 0,
                 "daily_change_percent": 0
             } 

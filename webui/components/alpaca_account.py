@@ -320,19 +320,21 @@ def render_orders_table(orders_data=None):
 
         def _render_bracket_header(group):
             sides_lower = [str(o.get("Side", "")).lower() for o in group]
+            sells = [s for s in sides_lower if "sell" in s]  # captures sell, sell_short
+            buys  = [s for s in sides_lower if "buy"  in s]  # captures buy, buy_to_cover
+
             if any("sell_short" in s for s in sides_lower):
                 group_label, label_class, icon_class = "SHORT", "text-danger", "fas fa-arrow-down me-1"
-            elif any("buy_to_cover" in s for s in sides_lower):
+            elif len(sells) > 0 and len(sells) < len(buys):
+                # 1 sell entry + N buy legs → short bracket
+                group_label, label_class, icon_class = "SHORT", "text-danger", "fas fa-arrow-down me-1"
+            elif len(buys) > 0 and len(buys) < len(sells):
+                # 1 buy entry + N sell legs → long bracket
+                group_label, label_class, icon_class = "LONG", "text-success", "fas fa-arrow-up me-1"
+            elif len(buys) >= len(sells):
                 group_label, label_class, icon_class = "LONG", "text-success", "fas fa-arrow-up me-1"
             else:
-                buy_count = sum(1 for s in sides_lower if "buy" in s)
-                sell_count = sum(1 for s in sides_lower if "sell" in s)
-                if buy_count > sell_count:
-                    group_label, label_class, icon_class = "LONG", "text-success", "fas fa-arrow-up me-1"
-                elif sell_count > buy_count:
-                    group_label, label_class, icon_class = "SHORT", "text-danger", "fas fa-arrow-down me-1"
-                else:
-                    group_label, label_class, icon_class = "MIXED", "text-warning", "fas fa-arrows-alt-v me-1"
+                group_label, label_class, icon_class = "SHORT", "text-danger", "fas fa-arrow-down me-1"
 
             return html.Div([
                 html.Span(group[0]["Asset"], className="order-symbol me-2"),
