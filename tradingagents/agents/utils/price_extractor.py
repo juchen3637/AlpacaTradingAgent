@@ -363,10 +363,11 @@ def validate_trading_prices(entry: float, stop: float, targets: list,
         rr_ratio = reward / risk if risk > 0 else 0
 
         if rr_ratio < 2.0:
-            warning = f"Risk/Reward ratio {rr_ratio:.2f}:1 below recommended 2:1"
-            print(f"[PRICE VALIDATION] {symbol}: WARNING - {warning}")
+            warning = f"Risk/Reward ratio {rr_ratio:.2f}:1 below minimum 2:1 — rejecting bracket prices"
+            print(f"[PRICE VALIDATION] {symbol}: ❌ {warning}")
             validated["warnings"].append(warning)
-            # Don't fail, just warn
+            validated["validation_passed"] = False
+            return None  # Hard fail — don't place bracket with sub-2:1 R/R
         else:
             print(f"[PRICE VALIDATION] {symbol}: Risk/Reward ratio {rr_ratio:.2f}:1 ✓")
 
