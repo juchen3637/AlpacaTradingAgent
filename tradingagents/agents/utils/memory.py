@@ -1,5 +1,4 @@
 import chromadb
-from chromadb.config import Settings
 from openai import OpenAI
 import numpy as np
 from tradingagents.dataflows.config import get_api_key
@@ -10,7 +9,7 @@ class FinancialSituationMemory:
         # Get API key from environment variables or config
         api_key = get_api_key("openai_api_key", "OPENAI_API_KEY")
         self.client = OpenAI(api_key=api_key)
-        self.chroma_client = chromadb.Client(Settings(allow_reset=True))
+        self.chroma_client = chromadb.EphemeralClient()
         self.situation_collection = self.chroma_client.get_or_create_collection(name=name)
 
     def _summarize_text(self, text, target_chars=20000):
