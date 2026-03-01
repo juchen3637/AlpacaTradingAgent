@@ -9,6 +9,7 @@ from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.agents.utils.agent_trading_modes import extract_recommendation
 from webui.utils.state import app_state
 from webui.utils.charts import create_chart
+from webui.watchdog import set_analysis_active, set_analysis_inactive, touch_analysis_flag
 
 
 def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizing=True,
@@ -227,6 +228,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
     import threading
     thread_id = threading.current_thread().name
 
+    current_state = None  # Ensure name is bound before try/finally so finally never hits NameError
     try:
         # Set thread-local symbol for tool tracking (thread-safe for parallel batch execution)
         from tradingagents.agents.utils.agent_utils import set_thread_symbol
@@ -245,6 +247,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
             print(f"Error: No state found for {ticker}")
             return
         current_state["analysis_running"] = True
+        set_analysis_active()
         current_state["analysis_complete"] = False
         
         # Create config with selected options
@@ -275,6 +278,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         ):
             # Track progress
             trace.append(chunk)
+            touch_analysis_flag()
 
             # Process intermediate results - pass ticker explicitly for thread safety
             app_state.process_chunk_updates(chunk, ticker=ticker)
@@ -354,8 +358,10 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
             progress(1.0)  # Complete the progress bar
     finally:
         # Mark analysis as no longer running
+        set_analysis_inactive()
         print(f"Real-time analysis for {ticker} completed")
-        current_state["analysis_running"] = False
+        if current_state is not None:
+            current_state["analysis_running"] = False
         
     return "Real-time analysis complete"
 
