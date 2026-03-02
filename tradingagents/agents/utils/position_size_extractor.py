@@ -85,7 +85,7 @@ def extract_position_size(text: str, account_info: dict) -> dict:
 
     # Pattern 3: Dollar amounts with context (anywhere in text)
     # Match: "allocate $2,500" or "risk $1000" or "buy $1.5k worth"
-    pattern_contextual_dollar = r"(?:allocate|risk|buy|invest|trade)\s*\$?([\d,]+(?:\.\d{2})?)\s*(?:k|K)?\s*(?:USD|dollars?|worth)?"
+    pattern_contextual_dollar = r"(?:allocate|risk|buy|invest|trade)\s*\$([\d,]+(?:\.\d{2})?)\s*(?:k|K)?\s*(?:USD|dollars?|worth)?(?!\s*shares?)"
     match = re.search(pattern_contextual_dollar, text, re.IGNORECASE)
     if match:
         amount_str = match.group(1).replace(',', '').strip()

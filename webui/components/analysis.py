@@ -63,6 +63,15 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             approved_size = full_state.get("approved_position_size", {})
             trader_size = full_state.get("recommended_position_size", {})
 
+            # Convert share-based sizing to dollars using approved entry price
+            _approved_prices_for_sizing = full_state.get("approved_trading_prices") or {}
+            _entry_for_sizing = _approved_prices_for_sizing.get("entry_price") or None
+            for _sd in [approved_size, trader_size]:
+                if _sd.get("recommended_shares") and not _sd.get("recommended_size_dollars"):
+                    if _entry_for_sizing and _entry_for_sizing > 0:
+                        _sd["recommended_size_dollars"] = _sd["recommended_shares"] * _entry_for_sizing
+                        print(f"[POSITION SIZE] Converted {_sd['recommended_shares']} shares × ${_entry_for_sizing:.2f} = ${_sd['recommended_size_dollars']:,.2f}")
+
             ai_suggested_dollars = (
                 approved_size.get("recommended_size_dollars") or
                 trader_size.get("recommended_size_dollars") or
