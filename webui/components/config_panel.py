@@ -248,47 +248,93 @@ def create_config_panel():
                 ], width=12),
             ]),
 
-            html.H5("LLM Quick Thinker Model:", className="mt-3"),
-            dbc.Select(
-                id="quick-llm",
+            html.H5("LLM Provider:", className="mt-3"),
+            dbc.RadioItems(
+                id="llm-provider",
                 options=[
-                    {"label": "gpt-5.2-2025-12-11", "value": "gpt-5.2-2025-12-11"},
-                    {"label": "gpt-5-mini-2025-08-07", "value": "gpt-5-mini-2025-08-07"},
-                    {"label": "gpt-5", "value": "gpt-5"},
-                    {"label": "gpt-5-mini", "value": "gpt-5-mini"},
-                    {"label": "gpt-5-nano", "value": "gpt-5-nano"},
-                    {"label": "gpt-4.1", "value": "gpt-4.1"},
-                    {"label": "gpt-4.1-nano", "value": "gpt-4.1-nano"},
-                    {"label": "gpt-4.1-mini", "value": "gpt-4.1-mini"},
-                    {"label": "gpt-4o", "value": "gpt-4o"},
-                    {"label": "gpt-4o-mini", "value": "gpt-4o-mini"},
-                    {"label": "o3-mini", "value": "o3-mini"},
-                    {"label": "o3", "value": "o3"},
-                    {"label": "o1", "value": "o1"},
+                    {"label": "OpenAI", "value": "openai"},
+                    {"label": "Anthropic", "value": "anthropic"},
                 ],
-                value="gpt-5-mini-2025-08-07",
-                className="mb-2"
-            ),
-            html.H5("LLM Deep Thinker Model:", className="mt-3"),
-            dbc.Select(
-                id="deep-llm",
-                options=[
-                    {"label": "gpt-5.2-2025-12-11", "value": "gpt-5.2-2025-12-11"},
-                    {"label": "gpt-5-mini-2025-08-07", "value": "gpt-5-mini-2025-08-07"},
-                    {"label": "gpt-5", "value": "gpt-5"},
-                    {"label": "gpt-5-mini", "value": "gpt-5-mini"},
-                    {"label": "gpt-5-nano", "value": "gpt-5-nano"},
-                    {"label": "gpt-4.1", "value": "gpt-4.1"},
-                    {"label": "gpt-4.1-nano", "value": "gpt-4.1-nano"},
-                    {"label": "gpt-4.1-mini", "value": "gpt-4.1-mini"},
-                    {"label": "gpt-4o", "value": "gpt-4o"},
-                    {"label": "gpt-4o-mini", "value": "gpt-4o-mini"},
-                    {"label": "o3-mini", "value": "o3-mini"},
-                    {"label": "o3", "value": "o3"},
-                    {"label": "o1", "value": "o1"},
-                ],
-                value="gpt-5.2-2025-12-11",
+                value="openai",
+                inline=True,
                 className="mb-3"
+            ),
+            html.Div(
+                id="openai-model-section",
+                children=[
+                    html.H5("LLM Quick Thinker Model:", className="mt-3"),
+                    dbc.Select(
+                        id="quick-llm",
+                        options=[
+                            {"label": "gpt-5.2-2025-12-11", "value": "gpt-5.2-2025-12-11"},
+                            {"label": "gpt-5-mini-2025-08-07", "value": "gpt-5-mini-2025-08-07"},
+                            {"label": "gpt-5", "value": "gpt-5"},
+                            {"label": "gpt-5-mini", "value": "gpt-5-mini"},
+                            {"label": "gpt-5-nano", "value": "gpt-5-nano"},
+                            {"label": "gpt-4.1", "value": "gpt-4.1"},
+                            {"label": "gpt-4.1-nano", "value": "gpt-4.1-nano"},
+                            {"label": "gpt-4.1-mini", "value": "gpt-4.1-mini"},
+                            {"label": "gpt-4o", "value": "gpt-4o"},
+                            {"label": "gpt-4o-mini", "value": "gpt-4o-mini"},
+                            {"label": "o3-mini", "value": "o3-mini"},
+                            {"label": "o3", "value": "o3"},
+                            {"label": "o1", "value": "o1"},
+                        ],
+                        value="gpt-5-mini-2025-08-07",
+                        className="mb-2"
+                    ),
+                    html.H5("LLM Deep Thinker Model:", className="mt-3"),
+                    dbc.Select(
+                        id="deep-llm",
+                        options=[
+                            {"label": "gpt-5.2-2025-12-11", "value": "gpt-5.2-2025-12-11"},
+                            {"label": "gpt-5-mini-2025-08-07", "value": "gpt-5-mini-2025-08-07"},
+                            {"label": "gpt-5", "value": "gpt-5"},
+                            {"label": "gpt-5-mini", "value": "gpt-5-mini"},
+                            {"label": "gpt-5-nano", "value": "gpt-5-nano"},
+                            {"label": "gpt-4.1", "value": "gpt-4.1"},
+                            {"label": "gpt-4.1-nano", "value": "gpt-4.1-nano"},
+                            {"label": "gpt-4.1-mini", "value": "gpt-4.1-mini"},
+                            {"label": "gpt-4o", "value": "gpt-4o"},
+                            {"label": "gpt-4o-mini", "value": "gpt-4o-mini"},
+                            {"label": "o3-mini", "value": "o3-mini"},
+                            {"label": "o3", "value": "o3"},
+                            {"label": "o1", "value": "o1"},
+                        ],
+                        value="gpt-5.2-2025-12-11",
+                        className="mb-3"
+                    ),
+                ]
+            ),
+            html.Div(
+                id="anthropic-model-section",
+                style={"display": "none"},
+                children=[
+                    html.H5("Anthropic Quick Thinker Model:", className="mt-3"),
+                    dbc.Select(
+                        id="anthropic-quick-llm",
+                        options=[
+                            {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
+                            {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
+                            {"label": "claude-3-5-haiku-20241022", "value": "claude-3-5-haiku-20241022"},
+                        ],
+                        value="claude-haiku-4-5-20251001",
+                        className="mb-2"
+                    ),
+                    html.H5("Anthropic Deep Thinker Model:", className="mt-3"),
+                    dbc.Select(
+                        id="anthropic-deep-llm",
+                        options=[
+                            {"label": "claude-opus-4-6", "value": "claude-opus-4-6"},
+                            {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
+                            {"label": "claude-opus-4-5", "value": "claude-opus-4-5"},
+                            {"label": "claude-sonnet-4-5", "value": "claude-sonnet-4-5"},
+                            {"label": "claude-3-5-sonnet-20241022", "value": "claude-3-5-sonnet-20241022"},
+                        ],
+                        value="claude-opus-4-6",
+                        className="mb-3"
+                    ),
+                ]
             ),
             html.Div(id="control-button-container", children=[
                 dbc.Button(

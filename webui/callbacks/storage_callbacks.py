@@ -26,7 +26,10 @@ def register_storage_callbacks(app):
             Output("trade-dollar-amount", "value"),
             Output("ai-position-sizing", "value"),
             Output("quick-llm", "value"),
-            Output("deep-llm", "value")
+            Output("deep-llm", "value"),
+            Output("llm-provider", "value"),
+            Output("anthropic-quick-llm", "value"),
+            Output("anthropic-deep-llm", "value")
         ],
         Input("settings-store", "data")
     )
@@ -51,7 +54,10 @@ def register_storage_callbacks(app):
                 defaults["trade_dollar_amount"],
                 defaults.get("ai_position_sizing", True),
                 defaults["quick_llm"],
-                defaults["deep_llm"]
+                defaults["deep_llm"],
+                defaults["llm_provider"],
+                defaults["anthropic_quick_llm"],
+                defaults["anthropic_deep_llm"]
             ]
 
         return [
@@ -70,7 +76,10 @@ def register_storage_callbacks(app):
             stored_settings.get("trade_dollar_amount", 4500),
             stored_settings.get("ai_position_sizing", True),
             stored_settings.get("quick_llm", "gpt-5-nano"),
-            stored_settings.get("deep_llm", "gpt-5-nano")
+            stored_settings.get("deep_llm", "gpt-5-nano"),
+            stored_settings.get("llm_provider", "openai"),
+            stored_settings.get("anthropic_quick_llm", "claude-haiku-4-5-20251001"),
+            stored_settings.get("anthropic_deep_llm", "claude-opus-4-6")
         ]
     
     # Callback to save settings to localStorage when they change
@@ -92,7 +101,10 @@ def register_storage_callbacks(app):
             Input("trade-dollar-amount", "value"),
             Input("ai-position-sizing", "value"),
             Input("quick-llm", "value"),
-            Input("deep-llm", "value")
+            Input("deep-llm", "value"),
+            Input("llm-provider", "value"),
+            Input("anthropic-quick-llm", "value"),
+            Input("anthropic-deep-llm", "value")
         ],
         [
             State("settings-store", "data"),
@@ -105,6 +117,7 @@ def register_storage_callbacks(app):
                      analyst_fundamentals, analyst_macro, parallel_analysts, research_depth, allow_shorts,
                      loop_interval, market_hours_input,
                      trade_after_analyze, trade_dollar_amount, ai_position_sizing, quick_llm, deep_llm,
+                     llm_provider, anthropic_quick_llm, anthropic_deep_llm,
                      current_settings, loop_enabled, market_hour_enabled):
         """Save settings to localStorage store"""
         
@@ -130,7 +143,10 @@ def register_storage_callbacks(app):
             "trade_dollar_amount": trade_dollar_amount,
             "ai_position_sizing": ai_position_sizing,
             "quick_llm": quick_llm,
-            "deep_llm": deep_llm
+            "deep_llm": deep_llm,
+            "llm_provider": llm_provider,
+            "anthropic_quick_llm": anthropic_quick_llm,
+            "anthropic_deep_llm": anthropic_deep_llm
         }
         
         return new_settings

@@ -18,7 +18,7 @@ from tradingagents.agents.utils.agent_states import (
     RiskDebateState,
 )
 from tradingagents.dataflows.interface import set_config
-from tradingagents.dataflows.config import get_api_key
+from tradingagents.dataflows.config import get_api_key, get_anthropic_api_key
 
 from .conditional_logic import ConditionalLogic
 from .setup import GraphSetup
@@ -26,7 +26,7 @@ from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
 
-# Import retry utilities for OpenAI rate limit handling
+# Import retry utilities for rate limit handling
 try:
     from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
     import openai
@@ -35,11 +35,26 @@ except ImportError:
     TENACITY_AVAILABLE = False
     print("[WARNING] tenacity not installed - rate limit retry disabled. Install with: pip install tenacity>=8.2.0")
 
+# Optional anthropic import for rate limit handling
+try:
+    import anthropic as _anthropic_module
+    _ANTHROPIC_RATE_LIMIT_ERROR = _anthropic_module.RateLimitError
+except ImportError:
+    _ANTHROPIC_RATE_LIMIT_ERROR = None
+
+
+def _get_rate_limit_error_types():
+    """Return the set of rate limit error types to catch."""
+    error_types = [openai.RateLimitError] if TENACITY_AVAILABLE else []
+    if _ANTHROPIC_RATE_LIMIT_ERROR is not None:
+        error_types.append(_ANTHROPIC_RATE_LIMIT_ERROR)
+    return tuple(error_types) if error_types else (Exception,)
+
 
 def invoke_llm_with_retry(llm, messages, max_attempts=3):
     """Invoke LLM with automatic retry on rate limit errors.
 
-    Retries with exponential backoff when OpenAI rate limits are hit,
+    Retries with exponential backoff when rate limits are hit (OpenAI or Anthropic),
     preventing analysis failures due to temporary API throttling.
 
     Args:
@@ -57,18 +72,44 @@ def invoke_llm_with_retry(llm, messages, max_attempts=3):
         # Fallback to direct invocation if tenacity not available
         return llm.invoke(messages)
 
+    rate_limit_errors = _get_rate_limit_error_types()
+
     @retry(
-        retry=retry_if_exception_type(openai.RateLimitError),
+        retry=retry_if_exception_type(rate_limit_errors),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         stop=stop_after_attempt(max_attempts),
         before_sleep=lambda retry_state: print(
-            f"[RATE_LIMIT] Hit OpenAI rate limit, retrying in {retry_state.next_action.sleep:.1f}s... (attempt {retry_state.attempt_number}/{max_attempts})"
+            f"[RATE_LIMIT] Hit rate limit, retrying in {retry_state.next_action.sleep:.1f}s... (attempt {retry_state.attempt_number}/{max_attempts})"
         )
     )
     def _invoke_with_retry():
         return llm.invoke(messages)
 
     return _invoke_with_retry()
+
+
+def _create_llm(model_name: str, provider: str, api_key: str = None):
+    """Factory function to create an LLM instance based on the provider.
+
+    Args:
+        model_name: Name of the model to use
+        provider: LLM provider ("openai" or "anthropic")
+        api_key: API key for the provider
+
+    Returns:
+        LLM instance (ChatOpenAI or ChatAnthropic)
+    """
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model_name, api_key=api_key, temperature=0.2)
+
+    # Default: OpenAI
+    kwargs = {}
+    # Models that don't support temperature parameter
+    no_temp_models = ["o3", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]
+    if not any(prefix in model_name for prefix in no_temp_models):
+        kwargs["temperature"] = 0.2
+    return ChatOpenAI(model=model_name, openai_api_key=api_key, **kwargs)
 
 
 def get_debate_rounds_from_depth(research_depth: str) -> Tuple[int, int]:
@@ -135,41 +176,26 @@ class TradingAgentsGraph:
             exist_ok=True,
         )
 
-        # Get API key from environment variables or config
-        api_key = get_api_key("openai_api_key", "OPENAI_API_KEY")
+        # Determine provider and pick appropriate API key / model names
+        provider = self.config.get("llm_provider", "openai")
 
-        # Initialize LLMs with appropriate parameters based on model type
-        deep_think_model = self.config["deep_think_llm"]
-        quick_think_model = self.config["quick_think_llm"]
-        
-        # Check if models don't support temperature parameter
-        deep_think_kwargs = {}
-        quick_think_kwargs = {}
-        
-        # Models that don't support temperature parameter
-        no_temp_models = ["o3", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]
-        
-        if not any(model_prefix in deep_think_model for model_prefix in no_temp_models):
-            deep_think_kwargs["temperature"] = 0.2
-            
-        if not any(model_prefix in quick_think_model for model_prefix in no_temp_models):
-            quick_think_kwargs["temperature"] = 0.2
-        
-        # Note: GPT-5 specific parameters like effort, verbosity, format are not yet 
-        # supported by the current OpenAI Python client library. 
-        # These will be added when the client library is updated to support them.
-        
-        self.deep_thinking_llm = ChatOpenAI(
-            model=deep_think_model, 
-            openai_api_key=api_key,
-            **deep_think_kwargs
-        )
-        
-        self.quick_thinking_llm = ChatOpenAI(
-            model=quick_think_model, 
-            openai_api_key=api_key,
-            **quick_think_kwargs
-        )
+        if provider == "anthropic":
+            api_key = get_anthropic_api_key()
+            deep_think_model = self.config.get(
+                "deep_think_llm", self.config.get("anthropic_deep_think_llm", "claude-opus-4-6")
+            )
+            quick_think_model = self.config.get(
+                "quick_think_llm", self.config.get("anthropic_quick_think_llm", "claude-haiku-4-5-20251001")
+            )
+        else:
+            api_key = get_api_key("openai_api_key", "OPENAI_API_KEY")
+            deep_think_model = self.config["deep_think_llm"]
+            quick_think_model = self.config["quick_think_llm"]
+
+        print(f"[CONFIG] LLM provider: {provider}, deep={deep_think_model}, quick={quick_think_model}")
+
+        self.deep_thinking_llm = _create_llm(deep_think_model, provider, api_key)
+        self.quick_thinking_llm = _create_llm(quick_think_model, provider, api_key)
         
         self.toolkit = Toolkit(config=self.config)
 

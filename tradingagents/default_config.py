@@ -9,8 +9,11 @@ DEFAULT_CONFIG = {
         "dataflows/data_cache",
     ),
     # LLM settings
+    "llm_provider": "openai",          # "openai" or "anthropic"
     "deep_think_llm": "gpt-5.2-2025-12-11",
     "quick_think_llm": "gpt-5-mini-2025-08-07",  # Supports web search via responses.create()
+    "anthropic_deep_think_llm": "claude-opus-4-6",
+    "anthropic_quick_think_llm": "claude-haiku-4-5-20251001",
     # Research depth settings - controls debate rounds for both investment and risk analysis
     # Options: "shallow" (1 round), "medium" (3 rounds), "deep" (5 rounds)
     "research_depth": "medium",  # shallow = fast, medium = balanced, deep = thorough
@@ -36,6 +39,7 @@ DEFAULT_CONFIG = {
     "online_tools": True,  # DEPRECATED - Tools automatically check cache first, then use API. This flag is ignored.
     # API keys (these will be overridden by environment variables if present)
     "openai_api_key": None,
+    "anthropic_api_key": None,
     "finnhub_api_key": None,
     "alpaca_api_key": None,
     "alpaca_secret_key": None,

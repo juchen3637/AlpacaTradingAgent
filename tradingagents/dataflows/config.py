@@ -53,6 +53,11 @@ def get_openai_api_key() -> str:
     return get_api_key("openai_api_key", "OPENAI_API_KEY")
 
 
+def get_anthropic_api_key() -> str:
+    """Get Anthropic API key from environment variables or config."""
+    return get_api_key("anthropic_api_key", "ANTHROPIC_API_KEY")
+
+
 def get_finnhub_api_key() -> str:
     """Get Finnhub API key from environment variables or config."""
     return get_api_key("finnhub_api_key", "FINNHUB_API_KEY")

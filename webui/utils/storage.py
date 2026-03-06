@@ -25,7 +25,10 @@ DEFAULT_SETTINGS = {
     "use_stop_loss": True,  # Stop loss orders enabled by default
     "use_take_profit": True,  # Take profit orders enabled by default
     "quick_llm": "gpt-5-mini-2025-08-07",
-    "deep_llm": "gpt-5.2-2025-12-11"
+    "deep_llm": "gpt-5.2-2025-12-11",
+    "llm_provider": "openai",
+    "anthropic_quick_llm": "claude-haiku-4-5-20251001",
+    "anthropic_deep_llm": "claude-opus-4-6"
 }
 
 def get_default_settings() -> Dict[str, Any]:
