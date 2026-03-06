@@ -15,6 +15,7 @@ setup(
     install_requires=[
         "langchain>=0.1.0",
         "langchain-openai>=0.0.2",
+        "langchain-anthropic>=0.3.0",
         "langchain-experimental>=0.0.40",
         "langgraph>=0.0.20",
         "numpy>=1.24.0",

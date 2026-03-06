@@ -233,7 +233,7 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             state["trading_results"] = {"error": f"Trading execution error: {str(e)}"}
 
 
-def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution=True, progress=None):
+def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution=True, progress=None, llm_provider="openai"):
     """Run the trading analysis using current/real-time data"""
     import threading
     thread_id = threading.current_thread().name
@@ -267,6 +267,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         config["parallel_analysts"] = parallel_execution  # Use user's choice from UI toggle
         config["quick_think_llm"] = quick_llm
         config["deep_think_llm"] = deep_llm
+        config["llm_provider"] = llm_provider
         
         # Initialize TradingAgentsGraph
         print(f"[PARALLEL-{thread_id}] {ticker}: Initializing TradingAgentsGraph with analysts: {selected_analysts}")
@@ -377,7 +378,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
 
 
 def start_analysis(ticker, analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
-                 research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution=True, progress=None):
+                 research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution=True, progress=None, llm_provider="openai"):
     """Start real-time analysis function for the UI"""
     import threading
     thread_id = threading.current_thread().name
@@ -414,7 +415,7 @@ def start_analysis(ticker, analysts_market, analysts_social, analysts_news, anal
         traceback.print_exc()
     
     # Run analysis with current data
-    run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution, progress)
+    run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution, progress, llm_provider=llm_provider)
     
     # Update the status message with more details
     trading_mode = "Trading Mode (LONG/NEUTRAL/SHORT)" if allow_shorts else "Investment Mode (BUY/HOLD/SELL)"

@@ -1,7 +1,9 @@
 typing-extensions
 openai>=1.30.0
 langchain-openai
+langchain-anthropic>=0.3.0
 langchain-experimental
+anthropic>=0.40.0
 pandas
 praw
 feedparser

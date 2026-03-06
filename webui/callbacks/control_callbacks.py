@@ -21,7 +21,8 @@ def process_symbols_in_parallel_batches(
     research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution,
     batch_size=5,
     batch_delay=5,
-    stop_condition=None
+    stop_condition=None,
+    llm_provider="openai"
 ):
     """
     Process a list of symbols in parallel batches.
@@ -57,7 +58,7 @@ def process_symbols_in_parallel_batches(
                     analysts_market, analysts_social, analysts_news,
                     analysts_fundamentals, analysts_macro,
                     research_depth, allow_shorts, quick_llm, deep_llm,
-                    parallel_execution
+                    parallel_execution, llm_provider=llm_provider
                 )
                 all_futures[future] = symbol
 
@@ -630,14 +631,17 @@ def register_control_callbacks(app):
          State("market-hours-input", "value"),
          State("parallel-execution", "value"),
          State("batch-size", "value"),
-         State("batch-delay", "value")]
+         State("batch-delay", "value"),
+         State("llm-provider", "value"),
+         State("anthropic-quick-llm", "value"),
+         State("anthropic-deep-llm", "value")]
     )
     def on_control_button_click(n_clicks, button_children, tickers, analysts_market, analysts_social, analysts_news,
                                analysts_fundamentals, analysts_macro, research_depth, quick_llm, deep_llm,
                                allow_shorts, loop_enabled, loop_interval, trade_enabled, trade_amount, use_ai_sizing,
                                use_stop_loss, use_take_profit, use_bracket_orders,
                                market_hour_enabled, market_hours_input, parallel_execution,
-                               batch_size, batch_delay):
+                               batch_size, batch_delay, llm_provider, anthropic_quick_llm, anthropic_deep_llm):
         """Handle control button clicks"""
         # Detect which property triggered this callback
         triggered_prop = None
@@ -713,6 +717,15 @@ def register_control_callbacks(app):
         
         num_symbols = len(symbols)
 
+        # Resolve effective LLM provider and model names
+        llm_provider = llm_provider or "openai"
+        if llm_provider == "anthropic":
+            effective_quick_llm = anthropic_quick_llm or "claude-haiku-4-5-20251001"
+            effective_deep_llm = anthropic_deep_llm or "claude-opus-4-6"
+        else:
+            effective_quick_llm = quick_llm
+            effective_deep_llm = deep_llm
+
         # Validate and set defaults for batch configuration
         if not batch_size or batch_size < 1:
             batch_size = 5
@@ -738,8 +751,9 @@ def register_control_callbacks(app):
                     'analysts_macro': analysts_macro,
                     'research_depth': research_depth,
                     'allow_shorts': allow_shorts,
-                    'quick_llm': quick_llm,
-                    'deep_llm': deep_llm,
+                    'quick_llm': effective_quick_llm,
+                    'deep_llm': effective_deep_llm,
+                    'llm_provider': llm_provider,
                     'trade_enabled': trade_enabled,
                     'trade_amount': trade_amount,
                     'parallel_execution': parallel_execution
@@ -791,10 +805,11 @@ def register_control_callbacks(app):
                     process_symbols_in_parallel_batches(
                         symbols,
                         analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
-                        research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution,
+                        research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
                         batch_size=batch_size,
                         batch_delay=batch_delay,
-                        stop_condition=lambda: app_state.stop_market_hour
+                        stop_condition=lambda: app_state.stop_market_hour,
+                        llm_provider=llm_provider
                     )
 
                     if not app_state.stop_market_hour:
@@ -810,8 +825,9 @@ def register_control_callbacks(app):
                     'analysts_macro': analysts_macro,
                     'research_depth': research_depth,
                     'allow_shorts': allow_shorts,
-                    'quick_llm': quick_llm,
-                    'deep_llm': deep_llm,
+                    'quick_llm': effective_quick_llm,
+                    'deep_llm': effective_deep_llm,
+                    'llm_provider': llm_provider,
                     'trade_enabled': trade_enabled,
                     'trade_amount': trade_amount,
                     'parallel_execution': parallel_execution
@@ -826,10 +842,11 @@ def register_control_callbacks(app):
                     process_symbols_in_parallel_batches(
                         symbols,
                         analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
-                        research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution,
+                        research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
                         batch_size=batch_size,
                         batch_delay=batch_delay,
-                        stop_condition=lambda: app_state.stop_loop
+                        stop_condition=lambda: app_state.stop_loop,
+                        llm_provider=llm_provider
                     )
 
                     if app_state.stop_loop:
@@ -856,10 +873,11 @@ def register_control_callbacks(app):
                 process_symbols_in_parallel_batches(
                     symbols,
                     analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
-                    research_depth, allow_shorts, quick_llm, deep_llm, parallel_execution,
+                    research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
                     batch_size=batch_size,
                     batch_delay=batch_delay,
-                    stop_condition=None
+                    stop_condition=None,
+                    llm_provider=llm_provider
                 )
 
             app_state.analysis_running = False
@@ -932,7 +950,18 @@ def register_control_callbacks(app):
         
         print(f"[RESTORE] Restoring pagination: max_value={num_symbols}")
         return num_symbols, 1, num_symbols, 1
-    
+
+    @app.callback(
+        [Output("openai-model-section", "style"),
+         Output("anthropic-model-section", "style")],
+        Input("llm-provider", "value")
+    )
+    def toggle_provider_sections(provider):
+        """Show/hide model sections based on selected LLM provider."""
+        if provider == "anthropic":
+            return {"display": "none"}, {"display": "block"}
+        return {"display": "block"}, {"display": "none"}
+
     @app.callback(
         Output("result-text", "children", allow_duplicate=True),
         [Input("app-store", "data")],
