@@ -69,6 +69,17 @@ def extract_position_size(text: str, account_info: dict) -> dict:
         result["original_text"] = match.group(0)
         return result
 
+    # Pattern 1c: Risk budget division result "risk $X / $Y per share = Z shares"
+    pattern_risk_division = r"\$[\d,.]+\s*/\s*\$[\d,.]+(?:\s*per\s*share)?\s*[=≈]\s*([\d,]+)\s*shares?"
+    match = re.search(pattern_risk_division, text, re.IGNORECASE)
+    if match:
+        shares = int(match.group(1).replace(',', ''))
+        result["recommended_shares"] = shares
+        result["extraction_method"] = "risk_division_shares"
+        result["confidence"] = "high"
+        result["original_text"] = match.group(0)
+        return result
+
     # Pattern 2: Percentage of account/buying power
     # Match: "3% of buying power" or "risk 2.5% of account"
     pattern_percentage = r"(?:risk|allocate|use)\s*([\d.]+)%\s*(?:of\s*)?(?:account|buying power|equity|portfolio)"
@@ -85,7 +96,7 @@ def extract_position_size(text: str, account_info: dict) -> dict:
 
     # Pattern 3: Dollar amounts with context (anywhere in text)
     # Match: "allocate $2,500" or "risk $1000" or "buy $1.5k worth"
-    pattern_contextual_dollar = r"(?:allocate|risk|buy|invest|trade)\s*\$([\d,]+(?:\.\d{2})?)\s*(?:k|K)?\s*(?:USD|dollars?|worth)?(?!\s*shares?)"
+    pattern_contextual_dollar = r"(?:allocate|buy|invest|trade)\s*\$([\d,]+(?:\.\d{2})?)\s*(?:k|K)?\s*(?:USD|dollars?|worth)?(?!\s*shares?)"
     match = re.search(pattern_contextual_dollar, text, re.IGNORECASE)
     if match:
         amount_str = match.group(1).replace(',', '').strip()
@@ -119,27 +130,11 @@ def extract_position_size(text: str, account_info: dict) -> dict:
         # Note: dollar amount will be calculated later based on current price
         return result
 
-    # Pattern 5: Generic dollar amounts (last resort)
-    # Match any standalone dollar amount: "$2,500"
-    pattern_generic_dollar = r"\$([\d,]+(?:\.\d{2})?)"
-    matches = re.findall(pattern_generic_dollar, text)
-    if matches:
-        amounts = []
-        for amount_str in matches:
-            try:
-                amount = float(amount_str.replace(',', ''))
-                if 100 <= amount <= 1_000_000:
-                    amounts.append(amount)
-            except ValueError:
-                continue
-        if amounts:
-            best = max(amounts)
-            result["recommended_size_dollars"] = best
-            result["extraction_method"] = "generic_dollar"
-            result["confidence"] = "low"
-            result["original_text"] = f"${best:,.2f}"
-            print(f"[POSITION SIZE EXTRACTOR] WARNING: generic dollar fallback used, picked ${max(amounts):,.2f} — check pattern coverage")
-            return result
+    # Pattern 5 (generic dollar fallback) intentionally removed.
+    # Picking the "largest dollar amount" from text is unreliable — entry prices,
+    # stop levels, and target prices all appear as dollar amounts and get misidentified
+    # as position sizes (e.g. AMD entry $200.5 → extractor returned $200 → 1 share).
+    # When no explicit position size pattern matches, fall through to configured trade_amount.
 
     # No pattern matched - extraction failed
     result["fallback_used"] = True
