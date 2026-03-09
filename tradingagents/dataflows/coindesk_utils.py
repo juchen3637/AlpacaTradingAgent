@@ -3,7 +3,26 @@ import re
 import datetime
 from .config import get_api_key
 
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    _TENACITY_AVAILABLE = True
+except ImportError:
+    _TENACITY_AVAILABLE = False
 
+    def retry(*args, **kwargs):  # type: ignore[misc]
+        """No-op decorator when tenacity is not installed."""
+        def decorator(func):
+            return func
+        return decorator
+
+    def stop_after_attempt(n):  # type: ignore[misc]
+        return None
+
+    def wait_exponential(**kwargs):  # type: ignore[misc]
+        return None
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=30), reraise=True)
 def get_news(symbol: str, n: int = 5):
     """
     Fetches news for a given cryptocurrency symbol from CryptoCompare API.
@@ -25,7 +44,7 @@ def get_news(symbol: str, n: int = 5):
     headers = {"Authorization": f"Apikey {api_key}"}
 
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=120)
         response.raise_for_status()
         news_data = response.json()
 

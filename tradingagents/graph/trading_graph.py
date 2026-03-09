@@ -3,8 +3,11 @@
 import os
 from pathlib import Path
 import json
-from datetime import date
+import logging
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
@@ -29,11 +32,18 @@ from .signal_processing import SignalProcessor
 # Import retry utilities for rate limit handling
 try:
     from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-    import openai
     TENACITY_AVAILABLE = True
 except ImportError:
     TENACITY_AVAILABLE = False
     print("[WARNING] tenacity not installed - rate limit retry disabled. Install with: pip install tenacity>=8.2.0")
+
+# Optional openai import for rate limit error type
+try:
+    import openai as _openai_module
+    _OPENAI_RATE_LIMIT_ERROR = _openai_module.RateLimitError
+except ImportError:
+    _openai_module = None
+    _OPENAI_RATE_LIMIT_ERROR = None
 
 # Optional anthropic import for rate limit handling
 try:
@@ -45,7 +55,9 @@ except ImportError:
 
 def _get_rate_limit_error_types():
     """Return the set of rate limit error types to catch."""
-    error_types = [openai.RateLimitError] if TENACITY_AVAILABLE else []
+    error_types = []
+    if _OPENAI_RATE_LIMIT_ERROR is not None:
+        error_types.append(_OPENAI_RATE_LIMIT_ERROR)
     if _ANTHROPIC_RATE_LIMIT_ERROR is not None:
         error_types.append(_ANTHROPIC_RATE_LIMIT_ERROR)
     return tuple(error_types) if error_types else (Exception,)
@@ -148,6 +160,28 @@ def get_debate_rounds_from_depth(research_depth: str) -> Tuple[int, int]:
     return max_debate_rounds, max_risk_discuss_rounds
 
 
+def _cleanup_old_eval_results(ticker: str, max_age_days: int = 30) -> None:
+    """Delete eval_results directories for a ticker where the log file is older than max_age_days.
+
+    Args:
+        ticker: The ticker symbol whose eval_results directory to inspect.
+        max_age_days: Remove the directory when the log file is older than this many days.
+    """
+    safe_ticker = ticker.replace("/", "_")
+    log_path = Path(f"eval_results/{safe_ticker}/TradingAgentsStrategy_logs/full_states_log.json")
+    if not log_path.exists():
+        return
+    try:
+        file_age = datetime.now() - datetime.fromtimestamp(log_path.stat().st_mtime)
+        if file_age > timedelta(days=max_age_days):
+            import shutil
+            ticker_dir = Path(f"eval_results/{safe_ticker}")
+            shutil.rmtree(ticker_dir, ignore_errors=True)
+            logger.info("[EVAL_RESULTS] Removed stale eval_results for %s (age: %s days)", ticker, file_age.days)
+    except Exception as exc:
+        logger.warning("[EVAL_RESULTS] Cleanup check failed for %s: %s", ticker, exc)
+
+
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
 
@@ -192,7 +226,7 @@ class TradingAgentsGraph:
             deep_think_model = self.config["deep_think_llm"]
             quick_think_model = self.config["quick_think_llm"]
 
-        print(f"[CONFIG] LLM provider: {provider}, deep={deep_think_model}, quick={quick_think_model}")
+        logger.info("[CONFIG] LLM provider: %s, deep=%s, quick=%s", provider, deep_think_model, quick_think_model)
 
         self.deep_thinking_llm = _create_llm(deep_think_model, provider, api_key)
         self.quick_thinking_llm = _create_llm(quick_think_model, provider, api_key)
@@ -217,7 +251,7 @@ class TradingAgentsGraph:
             # Use legacy config values if provided
             max_debate_rounds = self.config.get("max_debate_rounds", 3)
             max_risk_discuss_rounds = self.config.get("max_risk_discuss_rounds", 3)
-            print(f"[CONFIG] Using legacy debate settings: max_debate_rounds={max_debate_rounds}, max_risk_discuss_rounds={max_risk_discuss_rounds}")
+            logger.info("[CONFIG] Using legacy debate settings: max_debate_rounds=%s, max_risk_discuss_rounds=%s", max_debate_rounds, max_risk_discuss_rounds)
         else:
             # Use research_depth to determine debate rounds
             max_debate_rounds, max_risk_discuss_rounds = get_debate_rounds_from_depth(research_depth)
@@ -353,6 +387,9 @@ class TradingAgentsGraph:
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
+        # Remove stale eval_results before writing new ones
+        _cleanup_old_eval_results(self.ticker)
+
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
@@ -383,15 +420,20 @@ class TradingAgentsGraph:
             "final_trade_decision": final_state["final_trade_decision"],
         }
 
-        # Save to file
-        directory = Path(f"eval_results/{self.ticker}/TradingAgentsStrategy_logs/")
+        # Save to file (sanitize ticker to avoid filesystem issues with crypto pairs like BTC/USD)
+        safe_ticker = self.ticker.replace("/", "_")
+        directory = Path(f"eval_results/{safe_ticker}/TradingAgentsStrategy_logs/")
         directory.mkdir(parents=True, exist_ok=True)
 
         with open(
-            f"eval_results/{self.ticker}/TradingAgentsStrategy_logs/full_states_log.json",
+            f"eval_results/{safe_ticker}/TradingAgentsStrategy_logs/full_states_log.json",
             "w",
         ) as f:
             json.dump(self.log_states_dict, f, indent=4)
+
+        # Evict the entry after writing to prevent unbounded memory growth
+        del self.log_states_dict[str(trade_date)]
+        logger.debug("[TRADING_GRAPH] State for %s written and evicted from memory", trade_date)
 
     def reflect_and_remember(self, returns_losses):
         """Reflect on decisions and update memory based on returns."""

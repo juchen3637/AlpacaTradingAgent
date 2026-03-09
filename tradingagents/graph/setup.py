@@ -81,8 +81,29 @@ class GraphSetup:
                 if ticker:
                     set_thread_symbol(ticker)
                 
-                # Create a deep copy of the state for this analyst
-                analyst_state = copy.deepcopy(state)
+                # Build a lightweight copy for this analyst: only the fields it
+                # needs are included.  Avoids deepcopy of the full (large)
+                # messages list shared across analysts.
+                _INPUT_FIELDS = {
+                    "company_of_interest",
+                    "trade_date",
+                    "sender",
+                    "market_report",
+                    "sentiment_report",
+                    "news_report",
+                    "fundamentals_report",
+                    "macro_report",
+                    "trading_mode",
+                    "current_position",
+                }
+                analyst_state = {
+                    k: v
+                    for k, v in state.items()
+                    if k in _INPUT_FIELDS
+                }
+                # messages must be present (LangGraph expects it); copy the
+                # list shallowly so each thread has its own list reference.
+                analyst_state["messages"] = list(state.get("messages", []))
                 
                 print(f"[PARALLEL] Starting {analyst_type} analyst")
                 

@@ -88,10 +88,11 @@ class LogInterceptor:
 
         with self._lock:
             logs = self._app_state.system_logs
+            # Enforce ring-buffer cap: remove oldest entry before appending so
+            # the list never grows beyond _MAX_LOGS.
+            if len(logs) >= _MAX_LOGS:
+                del logs[0]
             logs.append(entry)
-            if len(logs) > _MAX_LOGS:
-                # Trim oldest entries
-                self._app_state.system_logs = logs[-_TRIM_TO:]
 
 
 def install(app_state):

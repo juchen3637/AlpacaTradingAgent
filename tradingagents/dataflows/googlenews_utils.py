@@ -27,7 +27,7 @@ def make_request(url, headers):
     """Make a request with retry logic for rate limiting"""
     # Reduced delay for better performance while still avoiding detection
     time.sleep(random.uniform(1, 3))
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=120)
     return response
 
 

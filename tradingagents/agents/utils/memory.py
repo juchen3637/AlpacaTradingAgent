@@ -14,7 +14,7 @@ class FinancialSituationMemory:
         api_key = get_api_key("openai_api_key", "OPENAI_API_KEY")
         self.client = OpenAI(api_key=api_key)
         with FinancialSituationMemory._init_lock:
-            self.chroma_client = chromadb.EphemeralClient()
+            self.chroma_client = chromadb.PersistentClient(path="./agent_memories")
         self.situation_collection = self.chroma_client.get_or_create_collection(name=name)
 
     def _summarize_text(self, text, target_chars=20000):
