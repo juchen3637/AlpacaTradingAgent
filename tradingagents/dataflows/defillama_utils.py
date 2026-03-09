@@ -4,6 +4,24 @@ import requests
 import datetime
 from typing import List, Dict, Tuple, Optional
 
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    _TENACITY_AVAILABLE = True
+except ImportError:
+    _TENACITY_AVAILABLE = False
+
+    def retry(*args, **kwargs):  # type: ignore[misc]
+        """No-op decorator when tenacity is not installed."""
+        def decorator(func):
+            return func
+        return decorator
+
+    def stop_after_attempt(n):  # type: ignore[misc]
+        return None
+
+    def wait_exponential(**kwargs):  # type: ignore[misc]
+        return None
+
 """defillama_utils.py — lightweight helpers that pull free on‑chain fundamentals
 from DeFi Llama’s open API so your agent can issue Buy / Sell / Hold
 signals without paid data feeds.
@@ -18,11 +36,12 @@ BASE_URL = "https://api.llama.fi"
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=30), reraise=True)
 def _fetch_json(endpoint: str) -> Dict:
     """GET a DeFi Llama endpoint and return its JSON body.
     Raises requests.HTTPError on 4xx / 5xx.
     """
-    resp = requests.get(f"{BASE_URL}{endpoint}", timeout=10)
+    resp = requests.get(f"{BASE_URL}{endpoint}", timeout=120)
     resp.raise_for_status()
     return resp.json()
 

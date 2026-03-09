@@ -7,7 +7,6 @@ import argparse
 import sys
 import os
 import socket
-from webui.app_dash import run_app  
 
 
 def find_available_port(start_port, end_port=None):
@@ -68,8 +67,38 @@ def parse_args():
 
 def main():
     """Run the Dash web UI"""
+    # Set up logging before anything else
+    from tradingagents.logging_config import setup_logging
+    setup_logging()
+
+    # Validate required environment variables at startup
+    from tradingagents.dataflows.config import validate_required_env_vars
+    validate_required_env_vars()
+
+    # Clean up stale cache entries older than 14 days (336 hours) at startup
+    try:
+        from tradingagents.dataflows.cache_utils import clear_cache
+        clear_cache(older_than_hours=336)
+    except Exception as exc:
+        print(f"[STARTUP] Cache cleanup failed (non-fatal): {exc}")
+
+    from webui.app_dash import run_app
+
     args = parse_args()
-    
+
+    # Register graceful shutdown signals
+    import signal
+
+    def _shutdown_handler(signum, frame):
+        import logging
+        logging.getLogger(__name__).info(
+            "Received shutdown signal, shutting down gracefully"
+        )
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
+
     # Find an available port if the specified one is not available
     port = find_available_port(args.port)
     if port is None:

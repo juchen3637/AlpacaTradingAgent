@@ -7,17 +7,27 @@ set_analysis_active() / set_analysis_inactive() independently. The flag
 file is created when the count transitions 0 -> 1 and removed when it
 transitions 1 -> 0, so it remains present until the last parallel ticker
 finishes.
+
+The flag file stores the PID of the writing process so that a stale flag
+left behind by a crashed process is automatically detected and removed on
+the next startup check.
 """
 
 import os
 import time
 import threading
+from pathlib import Path
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Constants (edit here to tune watchdog behaviour without touching other files)
 # ---------------------------------------------------------------------------
 
-ANALYSIS_FLAG_PATH = "/tmp/trading_analysis_active"
+# Use a project-local path instead of /tmp so that the flag survives
+# container restarts mapping the project directory as a volume and is not
+# accidentally shared between unrelated processes on the same host.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ANALYSIS_FLAG_PATH = str(_PROJECT_ROOT / ".analysis_active")
 
 # How often the watchdog wakes up to check the flag file (seconds).
 WATCHDOG_INTERVAL_SECONDS = 600  # 10 minutes
@@ -36,6 +46,65 @@ _watchdog_started: bool = False
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _write_pid_to_flag() -> None:
+    """Write the current PID into the flag file."""
+    try:
+        with open(ANALYSIS_FLAG_PATH, "w") as fh:
+            fh.write(str(os.getpid()))
+        os.utime(ANALYSIS_FLAG_PATH, None)
+    except OSError as exc:
+        print(f"[WATCHDOG] WARNING: could not write PID to flag file {ANALYSIS_FLAG_PATH}: {exc}")
+
+
+def _is_pid_running(pid: int) -> bool:
+    """Return True if a process with *pid* exists on this host."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        # No such process
+        return False
+    except PermissionError:
+        # Process exists but we cannot signal it — treat as running
+        return True
+    except OSError:
+        return False
+
+
+def _read_pid_from_flag() -> Optional[int]:
+    """Read the PID stored in the flag file. Returns None on any error."""
+    try:
+        with open(ANALYSIS_FLAG_PATH, "r") as fh:
+            raw = fh.read().strip()
+        return int(raw) if raw.isdigit() else None
+    except Exception:
+        return None
+
+
+def _is_flag_stale() -> bool:
+    """Return True if the flag file exists but its PID is no longer running."""
+    if not os.path.exists(ANALYSIS_FLAG_PATH):
+        return False
+    pid = _read_pid_from_flag()
+    if pid is None:
+        # Cannot verify — treat as active to avoid false-positive removal.
+        return False
+    return not _is_pid_running(pid)
+
+
+def _remove_stale_flag() -> None:
+    """Remove a flag file whose stored PID is no longer running."""
+    try:
+        os.remove(ANALYSIS_FLAG_PATH)
+        print(f"[WATCHDOG] Removed stale flag file {ANALYSIS_FLAG_PATH} (dead PID)")
+    except OSError as exc:
+        print(f"[WATCHDOG] WARNING: could not remove stale flag file: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -51,13 +120,8 @@ def set_analysis_active() -> None:
     with _count_lock:
         _active_count += 1
         if _active_count == 1:
-            # First active analysis — create the flag file.
-            try:
-                with open(ANALYSIS_FLAG_PATH, "a"):
-                    pass  # create if absent, leave contents untouched
-                os.utime(ANALYSIS_FLAG_PATH, None)
-            except OSError as exc:
-                print(f"[WATCHDOG] WARNING: could not create flag file {ANALYSIS_FLAG_PATH}: {exc}")
+            # First active analysis — create the flag file with current PID.
+            _write_pid_to_flag()
 
 
 def set_analysis_inactive() -> None:
@@ -88,12 +152,13 @@ def touch_analysis_flag() -> None:
     the analysis is still making forward progress. The watchdog uses the mtime
     to detect analyses that have stopped emitting chunks (i.e., stuck LLM
     calls). If the flag file does not exist when this is called, it will be
-    created (open with mode 'a') before the utime call.
+    re-created with the current PID before the utime call.
     """
     try:
-        with open(ANALYSIS_FLAG_PATH, "a"):
-            pass  # create if somehow absent
-        os.utime(ANALYSIS_FLAG_PATH, None)
+        if not os.path.exists(ANALYSIS_FLAG_PATH):
+            _write_pid_to_flag()
+        else:
+            os.utime(ANALYSIS_FLAG_PATH, None)
     except OSError as exc:
         print(f"[WATCHDOG] WARNING: could not touch flag file {ANALYSIS_FLAG_PATH}: {exc}")
 
@@ -112,6 +177,11 @@ def _watchdog_loop() -> None:
 
         if not os.path.exists(ANALYSIS_FLAG_PATH):
             # No flag file — no active analysis; nothing to report.
+            continue
+
+        # Stale-flag detection: if the PID is dead, treat flag as stale.
+        if _is_flag_stale():
+            _remove_stale_flag()
             continue
 
         try:
@@ -147,6 +217,10 @@ def start_watchdog() -> None:
         if _watchdog_started:
             return
         _watchdog_started = True
+
+    # Clean up any stale flag from a previous crashed process before starting.
+    if _is_flag_stale():
+        _remove_stale_flag()
 
     thread = threading.Thread(
         target=_watchdog_loop,

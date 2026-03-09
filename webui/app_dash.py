@@ -13,13 +13,16 @@ RECENT FIX: Multiple Symbol Page Refresh Issue
 
 import dash
 import dash_bootstrap_components as dbc
-from flask import Flask
+from flask import Flask, jsonify
 import logging
+from datetime import datetime, timezone
 
 from webui.config.constants import APP_CONFIG, COLORS
 from webui.layout import create_main_layout
 from webui.callbacks import register_all_callbacks
 from webui.watchdog import start_watchdog
+
+logger = logging.getLogger(__name__)
 
 
 def apply_sequential_mode_fix():
@@ -68,8 +71,25 @@ def apply_sequential_mode_fix():
         return True
         
     except Exception as e:
-        print(f"⚠️ Could not apply sequential mode fix: {e}")
+        logger.warning("Could not apply sequential mode fix: %s", e)
         return False
+
+
+def _register_health_endpoint(server: Flask) -> None:
+    """Register a /health route on the underlying Flask server.
+
+    Returns JSON {"status": "ok", "timestamp": "<ISO-8601 UTC>"} with HTTP 200.
+    This is used by Docker HEALTHCHECK, load balancers, and monitoring tools.
+    """
+
+    @server.route("/health")
+    def health():
+        return jsonify(
+            {
+                "status": "ok",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
 
 def create_app():
@@ -85,6 +105,9 @@ def create_app():
     
     # Initialize Flask server
     server = Flask(__name__)
+
+    # Register /health endpoint for Docker HEALTHCHECK and monitoring
+    _register_health_endpoint(server)
 
     # Initialize Dash app with Bootstrap
     app = dash.Dash(
@@ -117,9 +140,9 @@ def run_app(port=7860, share=False, server_name="127.0.0.1", debug=False, max_th
     app = create_app()
     
     if debug:
-        print(f"Starting TradingAgents Dash Web UI on port {port}...")
+        logger.info("Starting TradingAgents Dash Web UI on port %s...", port)
     else:
-        print("Starting TradingAgents Web UI...")
+        logger.info("Starting TradingAgents Web UI...")
     
     # Suppress verbose HTTP request logs from Werkzeug
     logging.getLogger("werkzeug").setLevel(logging.WARNING)

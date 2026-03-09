@@ -41,6 +41,10 @@ USER appuser
 # Expose the Dash server port
 EXPOSE 7860
 
+# Health check: verify the Dash server is accepting connections
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:7860/ || exit 1
+
 # Default command: bind to 0.0.0.0 for container networking
 CMD ["python", "run_webui_dash.py", "--server-name", "0.0.0.0"]
 

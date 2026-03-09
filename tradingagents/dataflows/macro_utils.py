@@ -6,6 +6,24 @@ from .config import get_api_key, DATA_DIR
 import os
 import pandas as pd
 
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    _TENACITY_AVAILABLE = True
+except ImportError:
+    _TENACITY_AVAILABLE = False
+
+    def retry(*args, **kwargs):  # type: ignore[misc]
+        """No-op decorator when tenacity is not installed."""
+        def decorator(func):
+            return func
+        return decorator
+
+    def stop_after_attempt(n):  # type: ignore[misc]
+        return None
+
+    def wait_exponential(**kwargs):  # type: ignore[misc]
+        return None
+
 
 def get_fred_api_key():
     """Get FRED API key from config or environment"""
@@ -19,6 +37,7 @@ def get_fred_api_key():
     return api_key
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=30), reraise=True)
 def get_fred_data(series_id: str, start_date: str, end_date: str) -> Dict:
     """
     Get economic data from FRED API
@@ -47,7 +66,7 @@ def get_fred_data(series_id: str, start_date: str, end_date: str) -> Dict:
     }
     
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=120)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -250,14 +269,13 @@ def get_economic_indicators_report(curr_date: str, lookback_days: int = 90) -> s
             else:
                 result += "- **💡 Analysis**: Neutral monetary policy stance\n"
         
-        elif "CPI" in indicator_name or "PPI" in indicator_name:
-            if len(valid_obs) >= 12:
-                if yoy_change > 3.0:
-                    result += "- **💡 Analysis**: Above Fed's 2% inflation target\n"
-                elif yoy_change < 1.0:
-                    result += "- **💡 Analysis**: Below Fed's 2% inflation target\n"
-                else:
-                    result += "- **💡 Analysis**: Near Fed's 2% inflation target\n"
+        elif ("CPI" in indicator_name or "PPI" in indicator_name) and config.get("yoy") and len(valid_obs) >= 12:
+            if yoy_change > 3.0:
+                result += "- **💡 Analysis**: Above Fed's 2% inflation target\n"
+            elif yoy_change < 1.0:
+                result += "- **💡 Analysis**: Below Fed's 2% inflation target\n"
+            else:
+                result += "- **💡 Analysis**: Near Fed's 2% inflation target\n"
         
         elif indicator_name == "Unemployment Rate":
             if latest_value < 4.0:

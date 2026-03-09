@@ -1,8 +1,11 @@
 # -------------------------------- config.py -----------------------
 import tradingagents.default_config as default_config
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import os
+import logging
 from dotenv import load_dotenv
+
+_config_logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -81,6 +84,37 @@ def get_alpaca_use_paper() -> str:
 def get_fred_api_key() -> str:
     """Get FRED API key from environment variables or config."""
     return get_api_key("fred_api_key", "FRED_API_KEY")
+
+
+def validate_required_env_vars() -> List[str]:
+    """Check that all required environment variables are present.
+
+    Logs a WARNING for each missing variable but does not raise, because some
+    deployments may not use all features (e.g., a crypto-only deployment may
+    not need FINNHUB_API_KEY).
+
+    Returns:
+        List of missing variable names (empty list if all are present).
+    """
+    required: List[str] = [
+        "ALPACA_API_KEY",
+        "ALPACA_SECRET_KEY",
+        "OPENAI_API_KEY",
+        "FINNHUB_API_KEY",
+        "FRED_API_KEY",
+    ]
+    missing: List[str] = []
+    for var in required:
+        if not os.getenv(var):
+            missing.append(var)
+            _config_logger.warning(
+                "[CONFIG] Required environment variable %s is not set. "
+                "Some features may not work correctly.",
+                var,
+            )
+    if not missing:
+        _config_logger.info("[CONFIG] All required environment variables are present.")
+    return missing
 
 
 # Initialize with default config
