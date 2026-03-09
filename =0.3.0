@@ -1,0 +1,51 @@
+Collecting langchain-anthropic
+  Downloading langchain_anthropic-1.3.4-py3-none-any.whl.metadata (3.2 kB)
+Collecting anthropic<1.0.0,>=0.78.0 (from langchain-anthropic)
+  Downloading anthropic-0.84.0-py3-none-any.whl.metadata (3.0 kB)
+Collecting langchain-core<2.0.0,>=1.2.15 (from langchain-anthropic)
+  Downloading langchain_core-1.2.17-py3-none-any.whl.metadata (4.4 kB)
+Requirement already satisfied: pydantic<3.0.0,>=2.7.4 in ./venv/lib/python3.12/site-packages (from langchain-anthropic) (2.12.5)
+Requirement already satisfied: anyio<5,>=3.5.0 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (4.12.1)
+Requirement already satisfied: distro<2,>=1.7.0 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (1.9.0)
+Requirement already satisfied: docstring-parser<1,>=0.15 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (0.17.0)
+Requirement already satisfied: httpx<1,>=0.25.0 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (0.28.1)
+Requirement already satisfied: jiter<1,>=0.4.0 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (0.12.0)
+Requirement already satisfied: sniffio in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (1.3.1)
+Requirement already satisfied: typing-extensions<5,>=4.10 in ./venv/lib/python3.12/site-packages (from anthropic<1.0.0,>=0.78.0->langchain-anthropic) (4.15.0)
+Requirement already satisfied: idna>=2.8 in ./venv/lib/python3.12/site-packages (from anyio<5,>=3.5.0->anthropic<1.0.0,>=0.78.0->langchain-anthropic) (3.11)
+Requirement already satisfied: certifi in ./venv/lib/python3.12/site-packages (from httpx<1,>=0.25.0->anthropic<1.0.0,>=0.78.0->langchain-anthropic) (2026.1.4)
+Requirement already satisfied: httpcore==1.* in ./venv/lib/python3.12/site-packages (from httpx<1,>=0.25.0->anthropic<1.0.0,>=0.78.0->langchain-anthropic) (1.0.9)
+Requirement already satisfied: h11>=0.16 in ./venv/lib/python3.12/site-packages (from httpcore==1.*->httpx<1,>=0.25.0->anthropic<1.0.0,>=0.78.0->langchain-anthropic) (0.16.0)
+Requirement already satisfied: jsonpatch<2.0.0,>=1.33.0 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (1.33)
+Requirement already satisfied: langsmith<1.0.0,>=0.3.45 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (0.6.6)
+Requirement already satisfied: packaging>=23.2.0 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (25.0)
+Requirement already satisfied: pyyaml<7.0.0,>=5.3.0 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (6.0.3)
+Requirement already satisfied: tenacity!=8.4.0,<10.0.0,>=8.1.0 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (9.1.2)
+Requirement already satisfied: uuid-utils<1.0,>=0.12.0 in ./venv/lib/python3.12/site-packages (from langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (0.14.0)
+Requirement already satisfied: jsonpointer>=1.9 in ./venv/lib/python3.12/site-packages (from jsonpatch<2.0.0,>=1.33.0->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (3.0.0)
+Requirement already satisfied: orjson>=3.9.14 in ./venv/lib/python3.12/site-packages (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (3.11.5)
+Requirement already satisfied: requests-toolbelt>=1.0.0 in ./venv/lib/python3.12/site-packages (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (1.0.0)
+Requirement already satisfied: requests>=2.0.0 in ./venv/lib/python3.12/site-packages (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (2.32.5)
+Requirement already satisfied: zstandard>=0.23.0 in ./venv/lib/python3.12/site-packages (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (0.25.0)
+Requirement already satisfied: annotated-types>=0.6.0 in ./venv/lib/python3.12/site-packages (from pydantic<3.0.0,>=2.7.4->langchain-anthropic) (0.7.0)
+Requirement already satisfied: pydantic-core==2.41.5 in ./venv/lib/python3.12/site-packages (from pydantic<3.0.0,>=2.7.4->langchain-anthropic) (2.41.5)
+Requirement already satisfied: typing-inspection>=0.4.2 in ./venv/lib/python3.12/site-packages (from pydantic<3.0.0,>=2.7.4->langchain-anthropic) (0.4.2)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./venv/lib/python3.12/site-packages (from requests>=2.0.0->langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (3.4.4)
+Requirement already satisfied: urllib3<3,>=1.21.1 in ./venv/lib/python3.12/site-packages (from requests>=2.0.0->langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.2.15->langchain-anthropic) (2.6.3)
+Downloading langchain_anthropic-1.3.4-py3-none-any.whl (47 kB)
+Downloading anthropic-0.84.0-py3-none-any.whl (455 kB)
+Downloading langchain_core-1.2.17-py3-none-any.whl (502 kB)
+Installing collected packages: anthropic, langchain-core, langchain-anthropic
+  Attempting uninstall: anthropic
+    Found existing installation: anthropic 0.76.0
+    Uninstalling anthropic-0.76.0:
+      Successfully uninstalled anthropic-0.76.0
+  Attempting uninstall: langchain-core
+    Found existing installation: langchain-core 1.2.7
+    Uninstalling langchain-core-1.2.7:
+      Successfully uninstalled langchain-core-1.2.7
+
+Successfully installed anthropic-0.84.0 langchain-anthropic-1.3.4 langchain-core-1.2.17
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
