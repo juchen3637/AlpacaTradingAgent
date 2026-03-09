@@ -1,0 +1,9 @@
+{
+  "metadata": {
+    "function": "get_earnings_calendar",
+    "args": "('TSLA', '2026-03-09', '2026-04-30')",
+    "kwargs": "{}",
+    "cached_at": "2026-03-09T10:24:48.467014"
+  },
+  "data": "## TSLA Earnings Calendar (2026-03-09 to 2026-04-30)\n\n**Data Source:** Yahoo Finance (via yfinance)\n\n### 2026-04-21\n- **EPS Estimate**: 0.4\n- **EPS Reported**: nan\n- **Surprise**: nan (+nan%)\n\n"
+}

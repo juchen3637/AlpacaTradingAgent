@@ -953,14 +953,28 @@ def register_control_callbacks(app):
 
     @app.callback(
         [Output("openai-model-section", "style"),
-         Output("anthropic-model-section", "style")],
+         Output("anthropic-model-section", "style"),
+         Output("anthropic-quick-llm", "options"),
+         Output("anthropic-deep-llm", "options")],
         Input("llm-provider", "value")
     )
     def toggle_provider_sections(provider):
         """Show/hide model sections based on selected LLM provider."""
+        quick_options = [
+            {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
+            {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
+            {"label": "claude-3-5-haiku-20241022", "value": "claude-3-5-haiku-20241022"},
+        ]
+        deep_options = [
+            {"label": "claude-opus-4-6", "value": "claude-opus-4-6"},
+            {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
+            {"label": "claude-opus-4-5", "value": "claude-opus-4-5"},
+            {"label": "claude-sonnet-4-5", "value": "claude-sonnet-4-5"},
+            {"label": "claude-3-5-sonnet-20241022", "value": "claude-3-5-sonnet-20241022"},
+        ]
         if provider == "anthropic":
-            return {"display": "none"}, {"display": "block"}
-        return {"display": "block"}, {"display": "none"}
+            return {"display": "none"}, {"display": "block"}, quick_options, deep_options
+        return {"display": "block"}, {"display": "none"}, quick_options, deep_options
 
     @app.callback(
         Output("result-text", "children", allow_duplicate=True),
