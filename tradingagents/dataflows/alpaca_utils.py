@@ -544,6 +544,7 @@ class AlpacaUtils:
                 "symbol": order.symbol,
                 "side": order.side,
                 "qty": float(order.qty) if order.qty else None,
+                "filled_qty": float(order.qty) if order.qty else None,
                 "notional": float(order.notional) if order.notional else None,
                 "status": order.status,
                 "message": f"Successfully placed {side} order for {symbol}"
@@ -953,26 +954,36 @@ class AlpacaUtils:
             
             # Helper to calculate integer quantity for any orders (used by both trading modes)
             def _calc_qty(sym: str, amount: float, fallback_price: float = None) -> int:
-                """Return integer share qty based on latest quote price."""
+                """Return integer share qty based on latest quote price.
+
+                Raises ValueError if the price cannot be determined (quote unavailable
+                and no fallback_price provided), or if the computed quantity rounds to
+                zero (e.g. amount < price), so callers abort instead of placing a
+                silent 1-share order.
+                """
                 try:
                     quote = AlpacaUtils.get_latest_quote(sym)
                     price = quote.get("bid_price") or quote.get("ask_price")
                     if not price or price <= 0:
                         if fallback_price and fallback_price > 0:
                             print(f"[EXECUTE] ⚠️ Quote returned invalid price for {sym}, using fallback price ${fallback_price:.2f} for qty calc")
-                            qty = int(amount / fallback_price)
-                            return max(qty, 1)
-                        # Fallback: assume $1 to avoid div-by-zero; will raise later if Alpaca rejects
-                        price = 1
+                            price = fallback_price
+                        else:
+                            raise ValueError(f"Cannot determine share price for {sym}: quote returned invalid price and no entry_price provided")
                     qty = int(amount / price)
-                    return max(qty, 1)
+                    if qty <= 0:
+                        raise ValueError(f"Cannot determine share quantity for {sym}: dollar amount ${amount:.2f} is less than share price ${price:.2f}")
+                    return qty
+                except ValueError:
+                    raise
                 except Exception:
                     if fallback_price and fallback_price > 0:
                         print(f"[EXECUTE] ⚠️ Quote fetch failed for {sym}, using fallback price ${fallback_price:.2f} for qty calc")
                         qty = int(amount / fallback_price)
-                        return max(qty, 1)
-                    # last resort only
-                    return 1
+                        if qty <= 0:
+                            raise ValueError(f"Cannot determine share quantity for {sym}: dollar amount ${amount:.2f} is less than fallback price ${fallback_price:.2f}")
+                        return qty
+                    raise ValueError(f"Cannot determine share price for {sym}: quote unavailable and no entry_price provided")
             
             if allow_shorts:
                 # Trading mode: LONG/NEUTRAL/SHORT signals
@@ -1078,9 +1089,9 @@ class AlpacaUtils:
                                         stop_loss=bracket_sl, take_profit=bracket_tp
                                     )
                                 else:
-                                    qty_int = _calc_qty(symbol, dollar_amount, entry_price)
+                                    # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
                                     bracket_result = AlpacaUtils.place_bracket_order(
-                                        symbol=symbol, side="buy", qty=qty_int,
+                                        symbol=symbol, side="buy", notional=dollar_amount,
                                         stop_loss=bracket_sl, take_profit=bracket_tp
                                     )
                                 results.append({"action": "open_long_bracket", "result": bracket_result})
@@ -1089,16 +1100,13 @@ class AlpacaUtils:
                                     # For crypto, use exact dollar amount (notional)
                                     long_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                                 else:
-                                    # For stocks, calculate quantity
-                                    qty_int = _calc_qty(symbol, dollar_amount, entry_price)
-                                    long_result = AlpacaUtils.place_market_order(symbol, "buy", qty=qty_int)
+                                    # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
+                                    long_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                                 results.append({"action": "open_long", "result": long_result})
 
                                 # Place stop loss and take profit orders after entry
                                 if long_result.get("success"):
                                     filled_qty = long_result.get("filled_qty")
-                                    if filled_qty is None and not is_crypto:
-                                        filled_qty = qty_int
 
                                     # Place stop loss if provided
                                     if stop_loss and filled_qty:
@@ -1137,9 +1145,9 @@ class AlpacaUtils:
                                     stop_loss=bracket_sl, take_profit=bracket_tp
                                 )
                             else:
-                                qty_int = _calc_qty(symbol, dollar_amount, entry_price)
+                                # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
                                 bracket_result = AlpacaUtils.place_bracket_order(
-                                    symbol=symbol, side="buy", qty=qty_int,
+                                    symbol=symbol, side="buy", notional=dollar_amount,
                                     stop_loss=bracket_sl, take_profit=bracket_tp
                                 )
                             results.append({"action": "open_long_bracket", "result": bracket_result})
@@ -1148,16 +1156,13 @@ class AlpacaUtils:
                                 # For crypto, use exact dollar amount (notional)
                                 long_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                             else:
-                                # For stocks, calculate quantity
-                                qty_int = _calc_qty(symbol, dollar_amount, entry_price)
-                                long_result = AlpacaUtils.place_market_order(symbol, "buy", qty=qty_int)
+                                # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
+                                long_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                             results.append({"action": "open_long", "result": long_result})
 
                             # Place stop loss and take profit orders after entry
                             if long_result.get("success"):
                                 filled_qty = long_result.get("filled_qty")
-                                if filled_qty is None and not is_crypto:
-                                    filled_qty = qty_int
 
                                 # Place stop loss if provided
                                 if stop_loss and filled_qty:
@@ -1254,9 +1259,9 @@ class AlpacaUtils:
                                     stop_loss=bracket_sl, take_profit=bracket_tp
                                 )
                             else:
-                                qty_int = _calc_qty(symbol, dollar_amount, entry_price)
+                                # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
                                 bracket_result = AlpacaUtils.place_bracket_order(
-                                    symbol=symbol, side="buy", qty=qty_int,
+                                    symbol=symbol, side="buy", notional=dollar_amount,
                                     stop_loss=bracket_sl, take_profit=bracket_tp
                                 )
                             results.append({"action": "buy_bracket", "result": bracket_result})
@@ -1265,17 +1270,14 @@ class AlpacaUtils:
                                 # For crypto, use exact dollar amount (notional)
                                 buy_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                             else:
-                                # For stocks, calculate quantity
-                                qty_int = _calc_qty(symbol, dollar_amount, entry_price)
-                                buy_result = AlpacaUtils.place_market_order(symbol, "buy", qty=qty_int)
+                                # For stocks, use notional (dollar-based) ordering to avoid 1-share fallback
+                                buy_result = AlpacaUtils.place_market_order(symbol, "buy", notional=dollar_amount)
                             results.append({"action": "buy", "result": buy_result})
 
                             # Place stop loss and take profit orders after entry
                             if buy_result.get("success"):
                                 print(f"[EXECUTE] ✅ Entry order filled, checking for stop/target orders...")
                                 filled_qty = buy_result.get("filled_qty")
-                                if filled_qty is None and not is_crypto:
-                                    filled_qty = qty_int
                                 print(f"[EXECUTE] Filled quantity: {filled_qty}")
 
                                 # Place stop loss if provided
