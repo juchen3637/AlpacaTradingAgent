@@ -720,6 +720,9 @@ def register_control_callbacks(app):
         # Resolve effective LLM provider and model names
         llm_provider = llm_provider or "openai"
         if llm_provider == "anthropic":
+            from tradingagents.dataflows.config import get_anthropic_api_key
+            if not get_anthropic_api_key():
+                return "Error: ANTHROPIC_API_KEY is not set. Please add it to your .env file.", {}, 1, 1, 1, 1
             effective_quick_llm = anthropic_quick_llm or "claude-haiku-4-5-20251001"
             effective_deep_llm = anthropic_deep_llm or "claude-opus-4-6"
         else:

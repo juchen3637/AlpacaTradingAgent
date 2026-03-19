@@ -23,6 +23,16 @@ def register_status_callbacks(app):
         if not current_state:
             return dbc.Table()
 
+        # Show analysis error prominently if present
+        analysis_error = current_state.get("analysis_error")
+        if analysis_error:
+            return html.Div([
+                dbc.Alert([
+                    html.Strong("Analysis Failed: "),
+                    html.Span(analysis_error),
+                ], color="danger", className="mb-2"),
+            ])
+
         # Group agents by team, showing only selected analysts
         teams = {
             "Analyst Team": getattr(app_state, 'active_analysts', []),
