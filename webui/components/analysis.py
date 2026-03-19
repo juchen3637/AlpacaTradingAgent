@@ -362,9 +362,16 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         app_state.needs_ui_update = True
         
     except Exception as e:
-        print(f"Analysis error: {e}")
         import traceback
-        traceback.print_exc()
+        tb_str = traceback.format_exc()
+        print(f"Analysis error: {e}")
+        print(tb_str)
+        if current_state is not None:
+            current_state["analysis_error"] = str(e)
+            current_state["analysis_error_traceback"] = tb_str
+            current_state["analysis_running"] = False
+            current_state["analysis_complete"] = False
+            app_state.needs_ui_update = True
         if progress is not None:
             progress(1.0)  # Complete the progress bar
     finally:
