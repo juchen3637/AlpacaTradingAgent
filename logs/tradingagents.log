@@ -1,0 +1,11 @@
+2026-03-09 17:29:29 [INFO] tradingagents.dataflows.config: [CONFIG] All required environment variables are present.
+2026-03-09 17:29:32 [INFO] webui.app_dash: Starting TradingAgents Web UI...
+2026-03-09 17:29:32 [INFO] dash.dash: Dash is running on http://127.0.0.1:7860/
+
+2026-03-09 17:29:44 [INFO] tradingagents.graph.trading_graph: [CONFIG] LLM provider: anthropic, deep=claude-sonnet-4-6, quick=claude-haiku-4-5-20251001
+2026-03-09 17:29:44 [INFO] tradingagents.graph.trading_graph: [CONFIG] LLM provider: anthropic, deep=claude-sonnet-4-6, quick=claude-haiku-4-5-20251001
+2026-03-09 17:29:44 [INFO] tradingagents.graph.trading_graph: [CONFIG] LLM provider: anthropic, deep=claude-sonnet-4-6, quick=claude-haiku-4-5-20251001
+2026-03-09 17:29:44 [INFO] chromadb.telemetry.product.posthog: Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2026-03-09 17:30:01 [INFO] __main__: Received shutdown signal, shutting down gracefully
+2026-03-09 17:30:01 [INFO] __main__: Received shutdown signal, shutting down gracefully
+2026-03-09 17:30:02 [INFO] __main__: Received shutdown signal, shutting down gracefully

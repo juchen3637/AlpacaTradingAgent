@@ -765,32 +765,34 @@ def register_control_callbacks(app):
                 
                 # Market hour scheduling loop
                 import datetime
+                import pytz as _pytz
                 from webui.utils.market_hours import get_next_market_datetime, is_market_open
-                
+                _eastern = _pytz.timezone('US/Eastern')
+
                 while not app_state.stop_market_hour:
-                    # Find next execution time
-                    now = datetime.datetime.now()
+                    # Find next execution time (UTC-aware, converted to Eastern)
+                    now = datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern)
                     next_execution_times = []
-                    
+
                     for hour in app_state.market_hours:
                         next_dt = get_next_market_datetime(hour, now)
                         next_execution_times.append((hour, next_dt))
-                    
+
                     # Sort by next execution time
                     next_execution_times.sort(key=lambda x: x[1])
                     next_hour, next_dt = next_execution_times[0]
-                    
+
                     print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')} (Hour {next_hour})")
-                    
+
                     # Wait until next execution time
-                    while datetime.datetime.now() < next_dt.replace(tzinfo=None) and not app_state.stop_market_hour:
+                    while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
                         time.sleep(60)  # Check every minute
-                    
+
                     if app_state.stop_market_hour:
                         break
-                    
-                    # Check if market is actually open
-                    is_open, reason = is_market_open()
+
+                    # Check if market is actually open at the scheduled time
+                    is_open, reason = is_market_open(next_dt)
                     if not is_open:
                         print(f"[MARKET_HOUR] Market is closed: {reason}. Waiting for next execution time.")
                         continue
