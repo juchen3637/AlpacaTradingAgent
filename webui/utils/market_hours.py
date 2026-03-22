@@ -33,6 +33,32 @@ US_MARKET_HOLIDAYS_2025 = [
     "2025-12-25",  # Christmas Day
 ]
 
+US_MARKET_HOLIDAYS_2026 = [
+    "2026-01-01",  # New Year's Day
+    "2026-01-19",  # Martin Luther King Jr. Day
+    "2026-02-16",  # Washington's Birthday
+    "2026-04-03",  # Good Friday
+    "2026-05-25",  # Memorial Day
+    "2026-06-19",  # Juneteenth National Independence Day
+    "2026-07-03",  # Independence Day (observed)
+    "2026-09-07",  # Labor Day
+    "2026-11-26",  # Thanksgiving Day
+    "2026-12-25",  # Christmas Day
+]
+
+US_MARKET_HOLIDAYS_2027 = [
+    "2027-01-01",  # New Year's Day
+    "2027-01-18",  # Martin Luther King Jr. Day
+    "2027-02-15",  # Washington's Birthday
+    "2027-03-26",  # Good Friday
+    "2027-05-31",  # Memorial Day
+    "2027-06-18",  # Juneteenth National Independence Day (observed)
+    "2027-07-05",  # Independence Day (observed)
+    "2027-09-06",  # Labor Day
+    "2027-11-25",  # Thanksgiving Day
+    "2027-12-24",  # Christmas Day (observed)
+]
+
 # Market regular hours (EST/EDT)
 MARKET_OPEN_HOUR = 9   # 9:30 AM (use 9 for conservative approach)
 MARKET_CLOSE_HOUR = 16  # 4:00 PM
@@ -80,14 +106,11 @@ def is_market_open(target_datetime: datetime.datetime = None) -> Tuple[bool, str
     Returns:
         Tuple of (is_open, reason_if_closed)
     """
-    if target_datetime is None:
-        target_datetime = datetime.datetime.now()
-    
-    # Convert to Eastern Time
     eastern = pytz.timezone('US/Eastern')
-    if target_datetime.tzinfo is None:
-        # Assume local time and convert to Eastern
-        target_datetime = pytz.timezone('US/Eastern').localize(target_datetime)
+    if target_datetime is None:
+        target_datetime = datetime.datetime.now(tz=pytz.UTC).astimezone(eastern)
+    elif target_datetime.tzinfo is None:
+        target_datetime = eastern.localize(target_datetime)
     else:
         target_datetime = target_datetime.astimezone(eastern)
     
@@ -97,7 +120,7 @@ def is_market_open(target_datetime: datetime.datetime = None) -> Tuple[bool, str
     
     # Check if it's a holiday
     date_str = target_datetime.strftime("%Y-%m-%d")
-    all_holidays = US_MARKET_HOLIDAYS_2024 + US_MARKET_HOLIDAYS_2025
+    all_holidays = US_MARKET_HOLIDAYS_2024 + US_MARKET_HOLIDAYS_2025 + US_MARKET_HOLIDAYS_2026 + US_MARKET_HOLIDAYS_2027
     if date_str in all_holidays:
         return False, f"Market is closed for holiday on {date_str}"
     
@@ -123,12 +146,10 @@ def get_next_market_datetime(target_hour: int, from_datetime: datetime.datetime 
     Returns:
         Next datetime when market will be open at the target hour
     """
-    if from_datetime is None:
-        from_datetime = datetime.datetime.now()
-        
-    # Convert to Eastern Time
     eastern = pytz.timezone('US/Eastern')
-    if from_datetime.tzinfo is None:
+    if from_datetime is None:
+        from_datetime = datetime.datetime.now(tz=pytz.UTC).astimezone(eastern)
+    elif from_datetime.tzinfo is None:
         from_datetime = eastern.localize(from_datetime)
     else:
         from_datetime = from_datetime.astimezone(eastern)
