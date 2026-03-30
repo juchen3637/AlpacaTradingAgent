@@ -134,17 +134,16 @@ def register_status_callbacks(app):
             else:
                 # Format next execution time
                 try:
-                    from webui.utils.market_hours import get_next_market_datetime
-                    import datetime
-                    
-                    next_times = []
-                    for hour in app_state.market_hours:
-                        next_dt = get_next_market_datetime(hour)
-                        formatted_time = next_dt.strftime("%I:%M %p on %A")
-                        next_times.append(f"{hour}:00 → {formatted_time}")
-                    
-                    next_info = "; ".join(next_times[:2])  # Show first 2 to avoid clutter
-                    status_msg = f"⏰ Market hour mode - Next: {next_info}"
+                    from webui.utils.market_hours import get_next_run_datetime
+                    hours = app_state.market_hours  # [start_hour, end_hour]
+                    if len(hours) == 2:
+                        next_dt, run_now = get_next_run_datetime(hours[0], hours[1], immediate=True)
+                        if run_now:
+                            status_msg = "⏰ Market hour mode - Running now"
+                        else:
+                            status_msg = f"⏰ Market hour mode - Next: {next_dt.strftime('%I:%M %p on %A')}"
+                    else:
+                        status_msg = "⏰ Market hour mode - Waiting for next market hour"
                     status_class = "text-info mt-2"
                 except Exception as e:
                     status_msg = "⏰ Market hour mode - Waiting for next market hour"

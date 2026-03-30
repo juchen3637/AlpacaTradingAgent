@@ -6,7 +6,22 @@ safety validations to ensure responsible risk management.
 """
 
 import re
+import json
 from typing import Dict, List, Optional
+
+
+def extract_json_block(text: str) -> Optional[dict]:
+    """
+    Find the last ```json ... ``` block in text and parse it.
+    Returns parsed dict or None if no valid block found.
+    """
+    matches = list(re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL))
+    if not matches:
+        return None
+    try:
+        return json.loads(matches[-1].group(1))
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 def extract_trading_prices(text: str, current_price: float = None) -> dict:
@@ -51,6 +66,29 @@ def extract_trading_prices(text: str, current_price: float = None) -> dict:
         print("[PRICE EXTRACTOR] ❌ No text provided, extraction failed")
         result["fallback_used"] = True
         return result
+
+    # Try JSON block first (structured output from prompt instruction)
+    json_data = extract_json_block(text)
+    if json_data:
+        entry = json_data.get("entry_price")
+        stop = json_data.get("stop_loss")
+        targets_raw = json_data.get("targets") or []
+        targets = [float(t) for t in targets_raw if t is not None and float(t) > 0]
+
+        if entry or stop or targets:
+            print("[PRICE EXTRACTOR] ✅ JSON block found — using structured output")
+            if entry is not None and float(entry) > 0:
+                result["entry_price"] = float(entry)
+            if stop is not None and float(stop) > 0:
+                result["stop_loss"] = float(stop)
+            result["targets"] = targets
+            result["extraction_method"] = "json_block"
+            result["confidence"] = "high"
+            print(f"[PRICE EXTRACTOR] Entry: ${result['entry_price']:.2f}" if result["entry_price"] else "[PRICE EXTRACTOR] Entry: Not found")
+            print(f"[PRICE EXTRACTOR] Stop: ${result['stop_loss']:.2f}" if result["stop_loss"] else "[PRICE EXTRACTOR] Stop: Not found")
+            print(f"[PRICE EXTRACTOR] Targets: {[f'${t:.2f}' for t in result['targets']]}" if result["targets"] else "[PRICE EXTRACTOR] Targets: Not found")
+            if result["stop_loss"] is not None or result["targets"]:
+                return result
 
     # Show sample of text for debugging
     print("[PRICE EXTRACTOR] Sample of text to extract from (first 500 chars):")

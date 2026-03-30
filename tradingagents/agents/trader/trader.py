@@ -197,7 +197,22 @@ Then conclude with: {final_format}
 3. **Risk Management** - Stop loss placement and daily volatility-based sizing
 4. **Profit Targets** - Realistic targets based on daily ranges and technical levels
 5. **Overnight Risk** - Assessment of news risk and pre-market factors
-6. **Daily Context** - How market close conditions affect overnight positioning"""
+6. **Daily Context** - How market close conditions affect overnight positioning
+
+**STRUCTURED OUTPUT REQUIREMENT:**
+At the very end of your response, after all analysis, output ONLY this JSON block with no extra text after it:
+
+```json
+{
+  "action": "BUY",
+  "entry_price": 281.00,
+  "stop_loss": 273.00,
+  "targets": [299.00, 312.00],
+  "position_size_dollars": 7868
+}
+```
+
+Replace the example values with your actual recommended values. Use the exact field names. Use null for any field you cannot determine."""
 
         # Enhanced content validation for investment plan
         plan_content = investment_plan if investment_plan else ""

@@ -6,6 +6,7 @@ safety validations to ensure responsible risk management.
 """
 
 import re
+import json as _json
 from typing import Dict, Optional
 
 
@@ -45,6 +46,21 @@ def extract_position_size(text: str, account_info: dict) -> dict:
     if not text:
         result["fallback_used"] = True
         return result
+
+    # Try JSON block first (structured output from prompt instruction)
+    json_matches = list(re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL))
+    if json_matches:
+        try:
+            json_data = _json.loads(json_matches[-1].group(1))
+            pos_size = json_data.get("position_size_dollars")
+            if pos_size is not None and float(pos_size) > 0:
+                result["recommended_size_dollars"] = float(pos_size)
+                result["extraction_method"] = "json_block"
+                result["confidence"] = "high"
+                result["original_text"] = json_matches[-1].group(0)
+                return result
+        except (ValueError, _json.JSONDecodeError):
+            pass
 
     # Pattern 1: Explicit dollar amounts with "RECOMMENDED POSITION SIZE" or similar
     # Match: "RECOMMENDED POSITION SIZE: $2,500" or "Position Size: $1000" or "Notional: $30,877"
