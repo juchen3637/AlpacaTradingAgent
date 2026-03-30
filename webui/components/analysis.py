@@ -164,9 +164,8 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                 reason = "price validation failed (R/R < 2:1 or invalid levels)"
             else:
                 reason = "no valid stop/target prices extracted from analysis"
-            print(f"[TRADE] ❌ {ticker}: Trade REJECTED — {reason}. Signal was {recommended_action}.")
-            state["trading_results"] = {"error": f"Trade skipped — {reason}", "signal": recommended_action}
-            return
+            print(f"[TRADE] ⚠️ {ticker}: No valid stop/bracket prices — {reason}. Executing {recommended_action} entry-only (no stop/bracket).")
+            use_bracket_orders = False
 
         print(f"[TRADE] ═══════════════════════════════════════════════════")
         print(f"[TRADE] Executing trade for {ticker}:")
