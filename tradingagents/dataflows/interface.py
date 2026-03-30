@@ -439,19 +439,15 @@ def get_google_news(
     curr_date: Annotated[str, "Curr date in yyyy-mm-dd format"],
     look_back_days: Annotated[int, "how many days to look back"],
 ) -> str:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 
     start_date = datetime.strptime(curr_date, "%Y-%m-%d")
     before = start_date - relativedelta(days=look_back_days)
     before_str = before.strftime("%Y-%m-%d")
 
     api_key = get_gemini_api_key()
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        tools="google_search",
-    )
+    client = genai.Client(api_key=api_key)
 
     prompt = (
         f"Search for recent news about: {query}\n"
@@ -459,7 +455,13 @@ def get_google_news(
         "Return a concise summary of the most relevant articles, including the source and key points of each."
     )
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        ),
+    )
     result_text = response.text if response.text else ""
 
     if not result_text:
