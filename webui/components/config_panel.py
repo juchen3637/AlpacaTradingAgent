@@ -314,11 +314,12 @@ def create_config_panel():
                     dbc.Select(
                         id="anthropic-quick-llm",
                         options=[
+                            {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
                             {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
                             {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
                             {"label": "claude-3-5-haiku-20241022", "value": "claude-3-5-haiku-20241022"},
                         ],
-                        value="claude-haiku-4-5-20251001",
+                        value="claude-sonnet-4-6",
                         className="mb-2"
                     ),
                     html.H5("Anthropic Deep Thinker Model:", className="mt-3"),

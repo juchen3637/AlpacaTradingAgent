@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
     "quick_llm": "gpt-5-mini-2025-08-07",
     "deep_llm": "gpt-5.2-2025-12-11",
     "llm_provider": "openai",
-    "anthropic_quick_llm": "claude-haiku-4-5-20251001",
+    "anthropic_quick_llm": "claude-sonnet-4-6",
     "anthropic_deep_llm": "claude-opus-4-6"
 }
 
