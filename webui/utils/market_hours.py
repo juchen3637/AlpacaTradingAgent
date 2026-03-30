@@ -4,7 +4,7 @@ Market hours utilities for validating trading hours and checking if the market i
 
 import datetime
 import pytz
-from typing import List, Tuple, Dict, Any
+from typing import Tuple, Dict, Any
 
 # US stock market holidays (simplified - in production, use a proper holidays library)
 US_MARKET_HOLIDAYS_2024 = [
@@ -59,165 +59,162 @@ US_MARKET_HOLIDAYS_2027 = [
     "2027-12-24",  # Christmas Day (observed)
 ]
 
-# Market regular hours (EST/EDT)
-MARKET_OPEN_HOUR = 9   # 9:30 AM (use 9 for conservative approach)
-MARKET_CLOSE_HOUR = 16  # 4:00 PM
+ALL_HOLIDAYS = (
+    US_MARKET_HOLIDAYS_2024
+    + US_MARKET_HOLIDAYS_2025
+    + US_MARKET_HOLIDAYS_2026
+    + US_MARKET_HOLIDAYS_2027
+)
 
-def validate_market_hours(hours_str: str) -> Tuple[bool, List[int], str]:
+# Absolute market bounds
+MARKET_OPEN_HOUR = 9
+MARKET_CLOSE_HOUR = 16
+
+
+def validate_market_hours(hours_str: str) -> Tuple[bool, Tuple[int, int], str]:
     """
-    Validate market hours input string.
-    
-    Args:
-        hours_str: String like "11" or "11,13" representing hours
-        
+    Validate market hours range input string (e.g. "9,16").
+
     Returns:
-        Tuple of (is_valid, parsed_hours_list, error_message)
+        (is_valid, (start_hour, end_hour), error_message)
     """
     if not hours_str or not hours_str.strip():
-        return False, [], "Please enter at least one trading hour"
-    
+        return False, (0, 0), "Please enter a start and end hour (e.g. 9,16)"
+
+    parts = [p.strip() for p in hours_str.split(",") if p.strip()]
+
+    if len(parts) != 2:
+        return False, (0, 0), "Enter exactly two hours separated by a comma (e.g. 9,16)"
+
     try:
-        # Parse comma-separated hours
-        hours_parts = [h.strip() for h in hours_str.split(',') if h.strip()]
-        if not hours_parts:
-            return False, [], "Please enter at least one trading hour"
-        
-        hours = []
-        for hour_str in hours_parts:
-            hour = int(hour_str)
-            if hour < MARKET_OPEN_HOUR or hour > MARKET_CLOSE_HOUR:
-                return False, [], f"Hour {hour} is outside market hours ({MARKET_OPEN_HOUR}AM-{MARKET_CLOSE_HOUR}PM EST/EDT)"
-            hours.append(hour)
-        
-        # Remove duplicates and sort
-        hours = sorted(list(set(hours)))
-        return True, hours, ""
-        
+        start_hour = int(parts[0])
+        end_hour = int(parts[1])
     except ValueError:
-        return False, [], "Please enter valid hour numbers (e.g., 11,13)"
+        return False, (0, 0), "Please enter valid hour numbers (e.g. 9,16)"
+
+    if start_hour < MARKET_OPEN_HOUR or start_hour > MARKET_CLOSE_HOUR:
+        return False, (0, 0), f"Start hour {start_hour} is outside market hours (9–16)"
+
+    if end_hour < MARKET_OPEN_HOUR or end_hour > MARKET_CLOSE_HOUR:
+        return False, (0, 0), f"End hour {end_hour} is outside market hours (9–16)"
+
+    if start_hour >= end_hour:
+        return False, (0, 0), "Start hour must be before end hour"
+
+    return True, (start_hour, end_hour), ""
+
+
+def _is_market_day(dt: datetime.datetime) -> Tuple[bool, str]:
+    """Check if dt (Eastern) falls on a valid market day (weekday, non-holiday)."""
+    if dt.weekday() >= 5:
+        return False, "Market is closed on weekends"
+    date_str = dt.strftime("%Y-%m-%d")
+    if date_str in ALL_HOLIDAYS:
+        return False, f"Market is closed for holiday on {date_str}"
+    return True, "Market day"
+
 
 def is_market_open(target_datetime: datetime.datetime = None) -> Tuple[bool, str]:
     """
     Check if the US stock market is open at the given datetime.
-    
-    Args:
-        target_datetime: Datetime to check (defaults to current time)
-        
+
     Returns:
-        Tuple of (is_open, reason_if_closed)
+        (is_open, reason_if_closed)
     """
-    eastern = pytz.timezone('US/Eastern')
+    eastern = pytz.timezone("US/Eastern")
     if target_datetime is None:
         target_datetime = datetime.datetime.now(tz=pytz.UTC).astimezone(eastern)
     elif target_datetime.tzinfo is None:
         target_datetime = eastern.localize(target_datetime)
     else:
         target_datetime = target_datetime.astimezone(eastern)
-    
-    # Check if it's a weekend
-    if target_datetime.weekday() >= 5:  # Saturday = 5, Sunday = 6
-        return False, "Market is closed on weekends"
-    
-    # Check if it's a holiday
-    date_str = target_datetime.strftime("%Y-%m-%d")
-    all_holidays = US_MARKET_HOLIDAYS_2024 + US_MARKET_HOLIDAYS_2025 + US_MARKET_HOLIDAYS_2026 + US_MARKET_HOLIDAYS_2027
-    if date_str in all_holidays:
-        return False, f"Market is closed for holiday on {date_str}"
-    
-    # Check if it's within market hours (9:30 AM - 4:00 PM EST/EDT)
+
+    is_day, reason = _is_market_day(target_datetime)
+    if not is_day:
+        return False, reason
+
     market_open = target_datetime.replace(hour=9, minute=30, second=0, microsecond=0)
     market_close = target_datetime.replace(hour=16, minute=0, second=0, microsecond=0)
-    
+
     if target_datetime < market_open:
         return False, f"Market opens at 9:30 AM EST/EDT (currently {target_datetime.strftime('%I:%M %p %Z')})"
-    elif target_datetime > market_close:
+    if target_datetime > market_close:
         return False, f"Market closed at 4:00 PM EST/EDT (currently {target_datetime.strftime('%I:%M %p %Z')})"
-    
+
     return True, "Market is open"
 
-def get_next_market_datetime(target_hour: int, from_datetime: datetime.datetime = None) -> datetime.datetime:
-    """
-    Get the next market datetime for the specified hour.
-    
-    Args:
-        target_hour: Hour to target (e.g., 11 for 11 AM)
-        from_datetime: Starting datetime (defaults to current time)
-        
-    Returns:
-        Next datetime when market will be open at the target hour
-    """
-    eastern = pytz.timezone('US/Eastern')
-    if from_datetime is None:
-        from_datetime = datetime.datetime.now(tz=pytz.UTC).astimezone(eastern)
-    elif from_datetime.tzinfo is None:
-        from_datetime = eastern.localize(from_datetime)
-    else:
-        from_datetime = from_datetime.astimezone(eastern)
-    
-    # Start with today at the target hour
-    target_dt = from_datetime.replace(hour=target_hour, minute=0, second=0, microsecond=0)
-    
-    # If the target time today has already passed, start with tomorrow
-    if target_dt <= from_datetime:
-        target_dt += datetime.timedelta(days=1)
-        
-    # Keep advancing until we find a valid market day
-    max_attempts = 10  # Prevent infinite loops
-    attempts = 0
-    
-    while attempts < max_attempts:
-        is_open, reason = is_market_open(target_dt)
-        if is_open:
-            return target_dt
-        
-        # Move to next day
-        target_dt += datetime.timedelta(days=1)
-        attempts += 1
-    
-    # Fallback - return the target datetime even if we couldn't validate
-    return target_dt
 
-def format_market_hours_info(hours: List[int]) -> Dict[str, Any]:
+def get_next_run_datetime(
+    start_hour: int,
+    end_hour: int,
+    from_datetime: datetime.datetime = None,
+    immediate: bool = False,
+) -> Tuple[datetime.datetime, bool]:
     """
-    Format market hours information for display.
-    
-    Args:
-        hours: List of hours (e.g., [11, 13])
-        
+    Calculate when the next analysis run should happen given a trading range.
+
+    If immediate=True and current time is within [start_hour, end_hour] on a market day,
+    returns (now, True) so the caller runs immediately.
+
+    Otherwise returns (next_top_of_hour_within_range_on_next_valid_market_day, False).
+
     Returns:
-        Dictionary with formatted information
+        (next_dt, run_now)
+        run_now=True means fire immediately without waiting.
     """
-    if not hours:
-        return {"error": "No hours provided"}
-    
-    # Format hours for display
-    formatted_hours = []
-    for hour in sorted(hours):
-        if hour == 0:
-            formatted_hours.append("12:00 AM")
-        elif hour < 12:
-            formatted_hours.append(f"{hour}:00 AM")
-        elif hour == 12:
-            formatted_hours.append("12:00 PM")
+    eastern = pytz.timezone("US/Eastern")
+    if from_datetime is None:
+        now = datetime.datetime.now(tz=pytz.UTC).astimezone(eastern)
+    elif from_datetime.tzinfo is None:
+        now = eastern.localize(from_datetime)
+    else:
+        now = from_datetime.astimezone(eastern)
+
+    if immediate:
+        # Check if we're currently within the trading window on a market day
+        is_day, _ = _is_market_day(now)
+        if is_day and start_hour <= now.hour <= end_hour:
+            return now, True
+
+    # Find next top-of-hour within [start_hour, end_hour]
+    # Start candidate: top of next hour
+    candidate = now.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+
+    for _ in range(14):  # max 14 days forward
+        is_day, _ = _is_market_day(candidate)
+        if is_day and start_hour <= candidate.hour <= end_hour:
+            return candidate, False
+        # Advance: if past end_hour, jump to start_hour next day
+        if candidate.hour > end_hour or not is_day:
+            candidate = (candidate + datetime.timedelta(days=1)).replace(
+                hour=start_hour, minute=0, second=0, microsecond=0
+            )
         else:
-            formatted_hours.append(f"{hour-12}:00 PM")
-    
-    hours_str = " and ".join(formatted_hours)
-    
-    # Calculate next execution times
-    next_executions = []
-    for hour in hours:
-        next_dt = get_next_market_datetime(hour)
-        next_executions.append({
-            "hour": hour,
-            "formatted_hour": formatted_hours[hours.index(hour)],
-            "next_datetime": next_dt,
-            "next_formatted": next_dt.strftime("%A, %B %d at %I:%M %p %Z")
-        })
-    
+            candidate += datetime.timedelta(hours=1)
+
+    return candidate, False
+
+
+def format_market_hours_info(start_hour: int, end_hour: int) -> Dict[str, Any]:
+    """Format market hours range information for display."""
+    def fmt(h):
+        if h == 0:
+            return "12:00 AM"
+        if h < 12:
+            return f"{h}:00 AM"
+        if h == 12:
+            return "12:00 PM"
+        return f"{h - 12}:00 PM"
+
+    next_dt, run_now = get_next_run_datetime(start_hour, end_hour, immediate=True)
+    if run_now:
+        next_str = "Immediately (within trading window)"
+    else:
+        next_str = next_dt.strftime("%A, %B %d at %I:%M %p %Z")
+
     return {
-        "hours": hours,
-        "formatted_hours": hours_str,
-        "next_executions": next_executions,
-        "market_timezone": "US/Eastern"
-    } 
+        "start_hour": start_hour,
+        "end_hour": end_hour,
+        "formatted_range": f"{fmt(start_hour)} – {fmt(end_hour)} EST/EDT",
+        "next_run": next_str,
+    }

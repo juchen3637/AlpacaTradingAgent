@@ -160,11 +160,11 @@ def create_config_panel():
                     ),
                 ], xs=12, sm=6),
                 dbc.Col([
-                    dbc.Label("Trading Hours (e.g., 10,15 for 10AM & 3PM)", className="mb-1"),
+                    dbc.Label("Trading Hours — start,end (e.g. 9,16 for 9AM–4PM EST)", className="mb-1"),
                     dbc.Input(
                         id="market-hours-input",
                         type="text",
-                        placeholder="e.g., 11,13",
+                        placeholder="e.g., 9,16",
                         value="",
                         className="mb-2"
                     ),
