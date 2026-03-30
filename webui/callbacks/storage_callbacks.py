@@ -78,7 +78,7 @@ def register_storage_callbacks(app):
             stored_settings.get("quick_llm", "gpt-5-nano"),
             stored_settings.get("deep_llm", "gpt-5-nano"),
             stored_settings.get("llm_provider", "openai"),
-            stored_settings.get("anthropic_quick_llm", "claude-haiku-4-5-20251001"),
+            stored_settings.get("anthropic_quick_llm", "claude-sonnet-4-6"),
             stored_settings.get("anthropic_deep_llm", "claude-opus-4-6")
         ]
     

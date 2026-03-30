@@ -723,7 +723,7 @@ def register_control_callbacks(app):
             from tradingagents.dataflows.config import get_anthropic_api_key
             if not get_anthropic_api_key():
                 return "Error: ANTHROPIC_API_KEY is not set. Please add it to your .env file.", {}, 1, 1, 1, 1
-            effective_quick_llm = anthropic_quick_llm or "claude-haiku-4-5-20251001"
+            effective_quick_llm = anthropic_quick_llm or "claude-sonnet-4-6"
             effective_deep_llm = anthropic_deep_llm or "claude-opus-4-6"
         else:
             effective_quick_llm = quick_llm
@@ -966,6 +966,7 @@ def register_control_callbacks(app):
     def toggle_provider_sections(provider):
         """Show/hide model sections based on selected LLM provider."""
         quick_options = [
+            {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
             {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
             {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
             {"label": "claude-3-5-haiku-20241022", "value": "claude-3-5-haiku-20241022"},
