@@ -204,30 +204,26 @@ def register_control_callbacks(app):
         """Validate market hours input and show validation message"""
         if not hours_input or not hours_input.strip():
             return ""
-        
+
         from webui.utils.market_hours import validate_market_hours
-        
-        is_valid, hours, error_msg = validate_market_hours(hours_input)
-        
+
+        is_valid, (start_hour, end_hour), error_msg = validate_market_hours(hours_input)
+
         if not is_valid:
             return dbc.Alert([
                 html.I(className="fas fa-exclamation-triangle me-2"),
                 error_msg
             ], color="danger", className="mb-2")
-        else:
-            # Format hours for display
-            formatted_hours = []
-            for hour in hours:
-                if hour < 12:
-                    formatted_hours.append(f"{hour}:00 AM")
-                else:
-                    formatted_hours.append(f"{hour-12}:00 PM" if hour > 12 else "12:00 PM")
-            
-            hours_str = " and ".join(formatted_hours)
-            return dbc.Alert([
-                html.I(className="fas fa-check-circle me-2"),
-                f"Valid trading hours: {hours_str} EST/EDT"
-            ], color="success", className="mb-2")
+
+        def fmt(h):
+            if h < 12:
+                return f"{h}:00 AM"
+            return "12:00 PM" if h == 12 else f"{h - 12}:00 PM"
+
+        return dbc.Alert([
+            html.I(className="fas fa-check-circle me-2"),
+            f"Trading window: {fmt(start_hour)} – {fmt(end_hour)} EST/EDT, running every hour"
+        ], color="success", className="mb-2")
 
     @app.callback(
         [Output("loop-enabled", "value"),
@@ -267,7 +263,7 @@ def register_control_callbacks(app):
         """Update the scheduling mode information display based on settings"""
         if market_hour_enabled:
             # Market Hour Mode
-            from webui.utils.market_hours import validate_market_hours, format_market_hours_info
+            from webui.utils.market_hours import validate_market_hours, format_market_hours_info  # noqa: F811
             
             if not market_hours_input or not market_hours_input.strip():
                 return dbc.Card([
@@ -284,55 +280,49 @@ def register_control_callbacks(app):
                     ], style={"backgroundColor": "#f8d7da"})
                 ])
             
-            is_valid, hours, error_msg = validate_market_hours(market_hours_input)
-            
+            is_valid, (start_hour, end_hour), error_msg = validate_market_hours(market_hours_input)
+
             if not is_valid:
                 return dbc.Card([
                     dbc.CardHeader([
-                        html.H6("Market Hour Mode - Invalid Hours", 
-                               className="mb-0", 
+                        html.H6("Market Hour Mode - Invalid Hours",
+                               className="mb-0",
                                style={"fontWeight": "bold", "color": "white"})
                     ], style={"backgroundColor": "#dc3545", "border": "none"}),
                     dbc.CardBody([
                         html.P([
-                            html.Strong("Error: ", style={"color": "black"}), 
+                            html.Strong("Error: ", style={"color": "black"}),
                             html.Span(error_msg, style={"color": "black"})
                         ], className="mb-0")
                     ], style={"backgroundColor": "#f8d7da"})
                 ])
-            
-            # Valid market hours
-            hours_info = format_market_hours_info(hours)
-            
-            next_executions = []
-            for exec_info in hours_info["next_executions"]:
-                next_executions.append(f"Next {exec_info['formatted_hour']}: {exec_info['next_formatted']}")
-            
+
+            # Valid market hours range
+            hours_info = format_market_hours_info(start_hour, end_hour)
+
             return dbc.Card([
                 dbc.CardHeader([
-                    html.H6("Market Hour Mode Enabled", 
-                           className="mb-0", 
+                    html.H6("Market Hour Mode Enabled",
+                           className="mb-0",
                            style={"fontWeight": "bold", "color": "white"})
                 ], style={"backgroundColor": "#28a745", "border": "none"}),
                 dbc.CardBody([
                     html.P([
-                        html.Strong("Trading Hours: ", style={"color": "black"}), 
-                        html.Span(hours_info["formatted_hours"], style={"color": "black"})
+                        html.Strong("Trading Window: ", style={"color": "black"}),
+                        html.Span(hours_info["formatted_range"], style={"color": "black"})
                     ], className="mb-2"),
                     html.P([
                         html.Strong("Behavior:", style={"color": "black"}),
                         html.Ul([
-                            html.Li("Wait for market hours and market open status", style={"color": "black"}),
-                            html.Li("Check holidays and weekends automatically", style={"color": "black"}),
-                            html.Li("Run analysis at specified times daily", style={"color": "black"}),
-                            html.Li("Continue until manually stopped", style={"color": "black"})
+                            html.Li("Starts analysis immediately on click (if within trading window)", style={"color": "black"}),
+                            html.Li("Runs again at the top of every hour within the window", style={"color": "black"}),
+                            html.Li("Next day resumes at start hour automatically", style={"color": "black"}),
+                            html.Li("Skips weekends and market holidays", style={"color": "black"}),
                         ], className="mb-1")
                     ], className="mb-2"),
                     html.P([
-                        html.Strong("Next Executions:", style={"color": "black"}),
-                        html.Ul([
-                            html.Li(exec_str, style={"color": "black"}) for exec_str in next_executions
-                        ], className="mb-1")
+                        html.Strong("Next Run: ", style={"color": "black"}),
+                        html.Span(hours_info["next_run"], style={"color": "black"})
                     ], className="mb-0")
                 ], style={"backgroundColor": "#d4edda"})
             ])
@@ -711,9 +701,10 @@ def register_control_callbacks(app):
         # Validate market hour configuration if enabled
         if market_hour_enabled:
             from webui.utils.market_hours import validate_market_hours
-            is_valid, market_hours_list, error_msg = validate_market_hours(market_hours_input)
+            is_valid, market_hours_range, error_msg = validate_market_hours(market_hours_input)
             if not is_valid:
                 return f"Invalid market hours: {error_msg}", {}, 1, 1, 1, 1
+            market_hour_start, market_hour_end = market_hours_range
         
         num_symbols = len(symbols)
 
@@ -761,52 +752,39 @@ def register_control_callbacks(app):
                     'trade_amount': trade_amount,
                     'parallel_execution': parallel_execution
                 }
-                app_state.start_market_hour_mode(symbols, market_hour_config, market_hours_list)
-                
+                app_state.start_market_hour_mode(symbols, market_hour_config, [market_hour_start, market_hour_end])
+
                 # Market hour scheduling loop
                 import datetime
                 import pytz as _pytz
-                from webui.utils.market_hours import get_next_market_datetime, is_market_open
+                from webui.utils.market_hours import get_next_run_datetime
                 _eastern = _pytz.timezone('US/Eastern')
 
+                first_run = True
                 while not app_state.stop_market_hour:
-                    # Find next execution time (UTC-aware, converted to Eastern)
                     now = datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern)
-                    next_execution_times = []
+                    next_dt, run_now = get_next_run_datetime(
+                        market_hour_start, market_hour_end, from_datetime=now, immediate=first_run
+                    )
+                    first_run = False
 
-                    for hour in app_state.market_hours:
-                        next_dt = get_next_market_datetime(hour, now)
-                        next_execution_times.append((hour, next_dt))
-
-                    # Sort by next execution time
-                    next_execution_times.sort(key=lambda x: x[1])
-                    next_hour, next_dt = next_execution_times[0]
-
-                    print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')} (Hour {next_hour})")
-
-                    # Wait until next execution time
-                    while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
-                        time.sleep(60)  # Check every minute
+                    if not run_now:
+                        print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')}")
+                        # Sleep until next_dt, checking for stop every 30s
+                        while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
+                            time.sleep(30)
 
                     if app_state.stop_market_hour:
                         break
 
-                    # Check if market is actually open at the scheduled time
-                    is_open, reason = is_market_open(next_dt)
-                    if not is_open:
-                        print(f"[MARKET_HOUR] Market is closed: {reason}. Waiting for next execution time.")
-                        continue
-                    
-                    print(f"[MARKET_HOUR] Market is open, starting analysis at {next_hour}:00")
+                    fire_hour = next_dt.hour if not run_now else now.hour
+                    print(f"[MARKET_HOUR] Running analysis at {fire_hour}:00 EST/EDT")
 
-                    # Reset states for new analysis
+                    # Reset states for new analysis run
                     app_state.reset_for_loop()
-
-                    # Initialize symbol states
                     for symbol in symbols:
                         app_state.init_symbol_state(symbol)
 
-                    # Run analysis with parallel batch processing
                     process_symbols_in_parallel_batches(
                         symbols,
                         analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
@@ -818,7 +796,7 @@ def register_control_callbacks(app):
                     )
 
                     if not app_state.stop_market_hour:
-                        print(f"[MARKET_HOUR] Analysis completed for {next_hour}:00. Waiting for next execution time.")
+                        print(f"[MARKET_HOUR] Analysis complete for {fire_hour}:00. Scheduling next run...")
             
             elif loop_enabled:
                 # Start loop mode
