@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "deep_think_llm": "gpt-5.2-2025-12-11",
     "quick_think_llm": "gpt-5-mini-2025-08-07",  # Supports web search via responses.create()
     "anthropic_deep_think_llm": "claude-opus-4-6",
-    "anthropic_quick_think_llm": "claude-haiku-4-5-20251001",
+    "anthropic_quick_think_llm": "claude-sonnet-4-6",
     # Research depth settings - controls debate rounds for both investment and risk analysis
     # Options: "shallow" (1 round), "medium" (3 rounds), "deep" (5 rounds)
     "research_depth": "medium",  # shallow = fast, medium = balanced, deep = thorough
