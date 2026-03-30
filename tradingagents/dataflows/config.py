@@ -61,6 +61,11 @@ def get_anthropic_api_key() -> str:
     return get_api_key("anthropic_api_key", "ANTHROPIC_API_KEY")
 
 
+def get_gemini_api_key() -> str:
+    """Get Gemini API key from environment variables or config."""
+    return get_api_key("gemini_api_key", "GEMINI_API_KEY")
+
+
 def get_finnhub_api_key() -> str:
     """Get Finnhub API key from environment variables or config."""
     return get_api_key("finnhub_api_key", "FINNHUB_API_KEY")

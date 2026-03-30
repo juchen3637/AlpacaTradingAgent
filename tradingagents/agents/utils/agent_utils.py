@@ -666,13 +666,12 @@ class Toolkit:
         curr_date: Annotated[str, "Curr date in yyyy-mm-dd format"],
     ):
         """
-        Retrieve the latest news from Google News based on a query and date range.
+        Retrieve the latest news via Gemini API with Google Search grounding.
         Args:
             query (str): Query to search with
             curr_date (str): Current date in yyyy-mm-dd format
-            look_back_days (int): How many days to look back
         Returns:
-            str: A formatted string containing the latest news from Google News based on the query and date range.
+            str: A formatted string containing the latest news from Google Search based on the query and date range.
         """
 
         google_news_results = interface.get_google_news(query, curr_date, 7)
