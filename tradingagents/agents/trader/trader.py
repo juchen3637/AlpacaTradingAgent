@@ -203,13 +203,13 @@ Then conclude with: {final_format}
 At the very end of your response, after all analysis, output ONLY this JSON block with no extra text after it:
 
 ```json
-{
+{{
   "action": "BUY",
   "entry_price": 281.00,
   "stop_loss": 273.00,
   "targets": [299.00, 312.00],
   "position_size_dollars": 7868
-}
+}}
 ```
 
 Replace the example values with your actual recommended values. Use the exact field names. Use null for any field you cannot determine."""
