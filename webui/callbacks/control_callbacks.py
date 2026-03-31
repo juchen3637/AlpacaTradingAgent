@@ -872,14 +872,7 @@ def register_control_callbacks(app):
         
         if market_hour_enabled:
             mode_text = "market hour mode"
-            # Format hours for display
-            formatted_hours = []
-            for hour in market_hours_list:
-                if hour < 12:
-                    formatted_hours.append(f"{hour}:00 AM")
-                else:
-                    formatted_hours.append(f"{hour-12}:00 PM" if hour > 12 else "12:00 PM")
-            interval_text = f" (at {' and '.join(formatted_hours)} EST/EDT)"
+            interval_text = f" ({market_hour_start}:00–{market_hour_end}:00 EST/EDT)"
         elif loop_enabled:
             mode_text = "loop mode"
             interval_text = f" (every {app_state.loop_interval_minutes} minutes)"
