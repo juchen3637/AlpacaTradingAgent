@@ -196,15 +196,14 @@ def create_config_panel():
                 dbc.Col([
                     dbc.Label("Max Order Amount ($)", className="mb-1"),
                     html.Small(
-                        "When AI sizing enabled: acts as maximum cap. When disabled: fixed trade amount.",
+                        "When AI sizing enabled: acts as maximum cap (leave blank for no cap). When disabled: fixed trade amount (leave blank to use buying power).",
                         className="text-muted d-block mb-1"
                     ),
                     dbc.Input(
                         id="trade-dollar-amount",
                         type="number",
-                        placeholder="4500",
-                        value=4500,
-                        min=1,
+                        placeholder="No limit (AI-determined)",
+                        value=None,
                         max=10000000,
                         className="mb-2"
                     ),

@@ -20,7 +20,7 @@ DEFAULT_SETTINGS = {
     "market_hour_enabled": False,
     "market_hours_input": "",
     "trade_after_analyze": False,
-    "trade_dollar_amount": 4500,
+    "trade_dollar_amount": None,
     "ai_position_sizing": True,  # AI-determined position sizing enabled by default
     "use_stop_loss": True,  # Stop loss orders enabled by default
     "use_take_profit": True,  # Take profit orders enabled by default
