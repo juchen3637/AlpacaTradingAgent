@@ -19,6 +19,7 @@ from openai import OpenAI
 from .config import get_config, set_config, DATA_DIR, get_api_key, get_gemini_api_key
 from .cache_utils import with_cache, load_from_cache, save_to_cache, generate_cache_key
 from .openai_client import get_openai_client
+from .anthropic_client import get_anthropic_client
 
 
 def get_model_params(model_name, max_tokens_value=3000):
@@ -856,6 +857,77 @@ def get_stock_news_openai(ticker, curr_date):
         try:
             display_ticker = normalize_ticker_for_logs(ticker)
         except:
+            pass
+        return f"Error fetching social media analysis for {display_ticker}: {str(e)}"
+
+
+def get_stock_news_anthropic(ticker, curr_date):
+    """Fetch social media sentiment and recent news using Anthropic with native web search."""
+    try:
+        from .ticker_utils import TickerUtils, normalize_ticker_for_logs
+        ticker_info = TickerUtils.standardize_ticker(ticker)
+        display_ticker = ticker_info['display_format']
+
+        print(f"[SOCIAL] Using Anthropic web search for: {display_ticker} (from input: {normalize_ticker_for_logs(ticker)})")
+
+        client = get_anthropic_client()
+
+        from datetime import datetime, timedelta
+        start_date = (datetime.strptime(curr_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        user_message = (
+            f"Search the web and analyze current social media sentiment and recent news for {display_ticker} "
+            f"from {start_date} to {curr_date}. Include:\n"
+            f"1. Overall sentiment analysis from recent social media posts\n"
+            f"2. Key themes and discussions happening now\n"
+            f"3. Notable price-moving news or events from the past week\n"
+            f"4. Trading implications based on current sentiment\n"
+            f"5. Summary table with key metrics"
+        )
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=(
+                "You are a financial research assistant with web search access. "
+                "Use real-time web search to provide comprehensive social media sentiment analysis "
+                "and recent news about the specified stock ticker. Focus on sentiment trends, "
+                "key discussions, and any notable developments from Reddit, Twitter/X, StockTwits, "
+                "and financial news sources."
+            ),
+            tools=[{
+                "type": "web_search_20260209",
+                "name": "web_search",
+                "max_uses": 5,
+                "allowed_domains": [
+                    "reddit.com", "x.com", "twitter.com", "stocktwits.com",
+                    "finance.yahoo.com", "bloomberg.com", "reuters.com",
+                    "cnbc.com", "seekingalpha.com", "marketwatch.com",
+                    "fool.com", "benzinga.com", "thestreet.com"
+                ]
+            }],
+            messages=[{"role": "user", "content": user_message}]
+        )
+
+        # Collect all text content blocks from the response
+        content_parts = []
+        for block in response.content:
+            if hasattr(block, 'type') and block.type == 'text':
+                content_parts.append(block.text)
+
+        content = "\n\n".join(content_parts).strip()
+
+        if not content:
+            return f"Error: Empty response from Anthropic web search for {display_ticker}."
+
+        return content
+
+    except Exception as e:
+        display_ticker = ticker
+        try:
+            from .ticker_utils import normalize_ticker_for_logs
+            display_ticker = normalize_ticker_for_logs(ticker)
+        except Exception:
             pass
         return f"Error fetching social media analysis for {display_ticker}: {str(e)}"
 
