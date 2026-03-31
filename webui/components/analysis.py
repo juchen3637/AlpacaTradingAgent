@@ -113,10 +113,12 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                     else:
                         print(f"[POSITION SIZE] Using Trader's recommended size")
                 else:
-                    print(f"[POSITION SIZE] AI-suggested size failed validation, using fallback ${actual_trade_amount:,.2f}")
+                    fallback_str = f"${actual_trade_amount:,.2f}" if actual_trade_amount else "no amount set"
+                    print(f"[POSITION SIZE] AI-suggested size failed validation, using fallback {fallback_str}")
             else:
                 # Extraction failed, use fallback
-                print(f"[POSITION SIZE] AI sizing extraction failed, using user-configured amount ${actual_trade_amount:,.2f}")
+                fallback_str = f"${actual_trade_amount:,.2f}" if actual_trade_amount else "no amount set"
+                print(f"[POSITION SIZE] AI sizing extraction failed, using {fallback_str}")
                 if approved_size.get("fallback_used"):
                     print(f"[POSITION SIZE] Risk Manager extraction failed")
                 if trader_size.get("fallback_used"):
@@ -129,7 +131,8 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             else:
                 print(f"[POSITION SIZE] AI sizing disabled, using fixed amount ${actual_trade_amount:,.2f}")
 
-        print(f"[TRADE] Executing trade for {ticker}: {recommended_action} with ${actual_trade_amount:,.2f}")
+        amount_str = f"${actual_trade_amount:,.2f}" if actual_trade_amount else "uncapped"
+        print(f"[TRADE] Executing trade for {ticker}: {recommended_action} with {amount_str}")
 
         # Extract approved trading prices from state
         print(f"[TRADE PRICES] Extracting approved prices from state for {ticker}...")
