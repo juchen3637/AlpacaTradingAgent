@@ -692,7 +692,7 @@ def register_control_callbacks(app):
         
         # Store trading configuration
         app_state.trade_enabled = trade_enabled
-        app_state.trade_amount = trade_amount if trade_amount and trade_amount > 0 else 1000
+        app_state.trade_amount = trade_amount if trade_amount and trade_amount > 0 else None
         app_state.use_ai_sizing = use_ai_sizing if use_ai_sizing is not None else True  # Default to True
         app_state.use_stop_loss = use_stop_loss if use_stop_loss is not None else True  # Default to True
         app_state.use_take_profit = use_take_profit if use_take_profit is not None else True  # Default to True

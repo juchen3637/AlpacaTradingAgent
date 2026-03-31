@@ -73,7 +73,7 @@ def register_storage_callbacks(app):
             stored_settings.get("loop_interval", 60),
             stored_settings.get("market_hours_input", ""),
             stored_settings.get("trade_after_analyze", False),
-            stored_settings.get("trade_dollar_amount", 4500),
+            stored_settings.get("trade_dollar_amount", None),
             stored_settings.get("ai_position_sizing", True),
             stored_settings.get("quick_llm", "gpt-5-nano"),
             stored_settings.get("deep_llm", "gpt-5-nano"),

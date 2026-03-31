@@ -98,10 +98,14 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                     ticker
                 )
 
-                # Apply user-configured maximum as safety cap
+                # Apply user-configured maximum as safety cap (skip cap if no limit set)
                 if validated_size > 0:
-                    actual_trade_amount = min(validated_size, trade_amount)
-                    print(f"[POSITION SIZE] AI recommended ${ai_suggested_dollars:,.2f}, validated to ${validated_size:,.2f}, capped at ${actual_trade_amount:,.2f}")
+                    if trade_amount:
+                        actual_trade_amount = min(validated_size, trade_amount)
+                        print(f"[POSITION SIZE] AI recommended ${ai_suggested_dollars:,.2f}, validated to ${validated_size:,.2f}, capped at ${actual_trade_amount:,.2f}")
+                    else:
+                        actual_trade_amount = validated_size
+                        print(f"[POSITION SIZE] AI recommended ${ai_suggested_dollars:,.2f}, validated to ${validated_size:,.2f} (no user cap)")
 
                     # Log which agent's recommendation was used
                     if approved_size.get("recommended_size_dollars"):
@@ -118,7 +122,12 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                 if trader_size.get("fallback_used"):
                     print(f"[POSITION SIZE] Trader extraction failed")
         else:
-            print(f"[POSITION SIZE] AI sizing disabled, using fixed amount ${actual_trade_amount:,.2f}")
+            if trade_amount is None:
+                account_info = AlpacaUtils.get_account_info()
+                actual_trade_amount = account_info.get("buying_power", 0)
+                print(f"[POSITION SIZE] AI sizing disabled, no cap set — using buying power ${actual_trade_amount:,.2f}")
+            else:
+                print(f"[POSITION SIZE] AI sizing disabled, using fixed amount ${actual_trade_amount:,.2f}")
 
         print(f"[TRADE] Executing trade for {ticker}: {recommended_action} with ${actual_trade_amount:,.2f}")
 
