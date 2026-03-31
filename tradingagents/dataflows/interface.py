@@ -862,63 +862,75 @@ def get_stock_news_openai(ticker, curr_date):
 
 
 def get_stock_news_anthropic(ticker, curr_date):
-    """Fetch social media sentiment and recent news using Anthropic with native web search."""
+    """Fetch social media sentiment using Gemini Google Search, then analyze with Claude Sonnet."""
     try:
         from .ticker_utils import TickerUtils, normalize_ticker_for_logs
+        from google import genai
+        from google.genai import types
+
         ticker_info = TickerUtils.standardize_ticker(ticker)
         display_ticker = ticker_info['display_format']
 
-        print(f"[SOCIAL] Using Anthropic web search for: {display_ticker} (from input: {normalize_ticker_for_logs(ticker)})")
-
-        client = get_anthropic_client()
+        print(f"[SOCIAL] Fetching social sentiment via Gemini for: {display_ticker} (from input: {normalize_ticker_for_logs(ticker)})")
 
         from datetime import datetime, timedelta
         start_date = (datetime.strptime(curr_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        user_message = (
-            f"Search the web and analyze current social media sentiment and recent news for {display_ticker} "
-            f"from {start_date} to {curr_date}. Include:\n"
-            f"1. Overall sentiment analysis from recent social media posts\n"
-            f"2. Key themes and discussions happening now\n"
-            f"3. Notable price-moving news or events from the past week\n"
-            f"4. Trading implications based on current sentiment\n"
-            f"5. Summary table with key metrics"
+        # Step 1: Gemini Flash 2.5 fetches raw social data via Google Search
+        gemini_api_key = get_gemini_api_key()
+        if not gemini_api_key:
+            return f"Error: Gemini API key not found. Please set GEMINI_API_KEY environment variable."
+
+        gemini_client = genai.Client(api_key=gemini_api_key)
+        queries = [
+            f"{display_ticker} stock sentiment Twitter X StockTwits investor discussion {start_date} to {curr_date}",
+            f"{display_ticker} stock Reddit SeekingAlpha investor sentiment analysis {start_date} to {curr_date}",
+        ]
+
+        raw_parts = []
+        for query in queries:
+            resp = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=query,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                ),
+            )
+            if resp.text:
+                raw_parts.append(resp.text)
+
+        if not raw_parts:
+            return f"Error: No social media data returned from Gemini search for {display_ticker}."
+
+        raw_social_data = "\n\n---\n\n".join(raw_parts)
+        print(f"[SOCIAL] Gemini fetch complete for {display_ticker}, passing to Claude for analysis...")
+
+        # Step 2: Claude Sonnet 4-6 analyzes the raw data
+        anthropic_client = get_anthropic_client()
+        analysis_prompt = (
+            f"You are analyzing social media sentiment for {display_ticker} from {start_date} to {curr_date}.\n\n"
+            f"Here is raw social media data gathered from Twitter/X, StockTwits, Reddit, and financial forums:\n\n"
+            f"{raw_social_data}\n\n"
+            f"Based on this data, provide:\n"
+            f"1. Overall sentiment analysis (bullish/bearish/neutral with reasoning)\n"
+            f"2. Key themes and discussions\n"
+            f"3. Notable price-moving events or catalysts\n"
+            f"4. Trading implications for EOD positioning\n"
+            f"5. A markdown summary table:\n"
+            f"| Platform | Sentiment | Volume | Change (EOD) | EOD Trading Signal |\n"
+            f"|----------|-----------|--------|--------------|--------------------|\n"
         )
 
-        response = client.messages.create(
+        response = anthropic_client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4096,
-            system=(
-                "You are a financial research assistant with web search access. "
-                "Use real-time web search to provide comprehensive social media sentiment analysis "
-                "and recent news about the specified stock ticker. Focus on sentiment trends, "
-                "key discussions, and any notable developments from Reddit, Twitter/X, StockTwits, "
-                "and financial news sources."
-            ),
-            tools=[{
-                "type": "web_search_20260209",
-                "name": "web_search",
-                "max_uses": 2,
-                "allowed_domains": [
-                    "x.com", "twitter.com", "stocktwits.com",
-                    "finance.yahoo.com", "bloomberg.com",
-                    "cnbc.com", "seekingalpha.com",
-                    "fool.com", "benzinga.com", "thestreet.com"
-                ]
-            }],
-            messages=[{"role": "user", "content": user_message}]
+            messages=[{"role": "user", "content": analysis_prompt}]
         )
 
-        # Collect all text content blocks from the response
-        content_parts = []
-        for block in response.content:
-            if hasattr(block, 'type') and block.type == 'text':
-                content_parts.append(block.text)
-
-        content = "\n\n".join(content_parts).strip()
+        content = response.content[0].text if response.content else ""
 
         if not content:
-            return f"Error: Empty response from Anthropic web search for {display_ticker}."
+            return f"Error: Empty analysis response from Claude for {display_ticker}."
 
         return content
 
