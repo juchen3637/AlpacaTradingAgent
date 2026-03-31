@@ -700,7 +700,7 @@ class Toolkit:
 
     @staticmethod
     @tool
-    @timing_wrapper("SOCIAL")
+    @timing_wrapper("SOCIAL", timeout_seconds=300)
     def get_stock_news_anthropic(
         ticker: Annotated[str, "the company's ticker"],
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],

@@ -898,7 +898,7 @@ def get_stock_news_anthropic(ticker, curr_date):
             tools=[{
                 "type": "web_search_20260209",
                 "name": "web_search",
-                "max_uses": 5,
+                "max_uses": 2,
                 "allowed_domains": [
                     "x.com", "twitter.com", "stocktwits.com",
                     "finance.yahoo.com", "bloomberg.com",
