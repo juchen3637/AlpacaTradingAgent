@@ -700,6 +700,24 @@ class Toolkit:
 
     @staticmethod
     @tool
+    @timing_wrapper("SOCIAL")
+    def get_stock_news_anthropic(
+        ticker: Annotated[str, "the company's ticker"],
+        curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+    ):
+        """
+        Retrieve the latest social media sentiment and news for a stock using Anthropic with web search.
+        Args:
+            ticker (str): Ticker of a company. e.g. AAPL, TSM
+            curr_date (str): Current date in yyyy-mm-dd format
+        Returns:
+            str: A formatted string containing the latest social media sentiment and news about the company.
+        """
+
+        return interface.get_stock_news_anthropic(ticker, curr_date)
+
+    @staticmethod
+    @tool
     @timing_wrapper("NEWS", timeout_seconds=480)  # 8 min timeout for parallel web searches (7 searches × ~60s each)
     def get_global_news_openai(
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],

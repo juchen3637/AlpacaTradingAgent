@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 import time
 import json
 from tradingagents.agents.utils.agent_utils import log_llm_start, log_llm_end
+from tradingagents.dataflows.config import get_config
 
 # Import prompt capture utility
 try:
@@ -19,10 +20,12 @@ def create_social_media_analyst(llm, toolkit):
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
 
-        # All tools now use smart caching - no need for online_tools flag
-        tools = [
-            toolkit.get_stock_news_openai,  # Social media sentiment (with caching)
-        ]
+        # Select web search tool based on configured LLM provider
+        _provider_config = get_config()
+        if _provider_config.get("llm_provider", "openai") == "anthropic":
+            tools = [toolkit.get_stock_news_anthropic]
+        else:
+            tools = [toolkit.get_stock_news_openai]
 
         system_message = (
             "You are an EOD TRADING social media analyst specializing in identifying sentiment shifts and social catalysts that could drive overnight and next-day price movements. "
