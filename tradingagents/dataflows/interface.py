@@ -900,9 +900,9 @@ def get_stock_news_anthropic(ticker, curr_date):
                 "name": "web_search",
                 "max_uses": 5,
                 "allowed_domains": [
-                    "reddit.com", "x.com", "twitter.com", "stocktwits.com",
-                    "finance.yahoo.com", "bloomberg.com", "reuters.com",
-                    "cnbc.com", "seekingalpha.com", "marketwatch.com",
+                    "x.com", "twitter.com", "stocktwits.com",
+                    "finance.yahoo.com", "bloomberg.com",
+                    "cnbc.com", "seekingalpha.com",
                     "fool.com", "benzinga.com", "thestreet.com"
                 ]
             }],
