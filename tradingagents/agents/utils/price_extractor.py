@@ -73,7 +73,14 @@ def extract_trading_prices(text: str, current_price: float = None) -> dict:
         entry = json_data.get("entry_price")
         stop = json_data.get("stop_loss")
         targets_raw = json_data.get("targets") or []
-        targets = [float(t) for t in targets_raw if t is not None and float(t) > 0]
+        targets = []
+        for t in targets_raw:
+            try:
+                v = float(t)
+                if v > 0:
+                    targets.append(v)
+            except (TypeError, ValueError):
+                pass
 
         if entry or stop or targets:
             print("[PRICE EXTRACTOR] ✅ JSON block found — using structured output")
@@ -310,6 +317,27 @@ def validate_trading_prices(entry: float, stop: float, targets: list,
         entry = current_price
         print(f"[PRICE VALIDATION] Using current price as entry: ${entry:.2f}")
 
+    # Reanchor AI prices to current market price to eliminate stale price issues.
+    # The AI's percentage distances (stop%, target%) represent risk intent and remain
+    # valid even when the market has moved since analysis time.
+    if entry and entry > 0 and current_price and current_price > 0 and abs(entry - current_price) / current_price > 0.005:
+        print(f"[PRICE VALIDATION] {symbol}: Reanchoring prices from AI entry ${entry:.2f} to current ${current_price:.2f}")
+        if position_type == "long":
+            stop_offset_pct = (entry - stop) / entry if stop else None
+            target_pcts = [(t - entry) / entry for t in targets]
+            entry = current_price
+            if stop_offset_pct is not None:
+                stop = round(entry * (1 - stop_offset_pct), 2)
+            targets = [round(entry * (1 + pct), 2) for pct in target_pcts]
+        else:
+            stop_offset_pct = (stop - entry) / entry if stop else None
+            target_pcts = [(entry - t) / entry for t in targets]
+            entry = current_price
+            if stop_offset_pct is not None:
+                stop = round(entry * (1 + stop_offset_pct), 2)
+            targets = [round(entry * (1 - pct), 2) for pct in target_pcts]
+        print(f"[PRICE VALIDATION] {symbol}: Reanchored → stop=${stop:.2f}, targets={[f'${t:.2f}' for t in targets]}" if stop else f"[PRICE VALIDATION] {symbol}: Reanchored targets → {[f'${t:.2f}' for t in targets]}")
+
     # Validate we have at least stop or targets
     if stop is None and len(targets) == 0:
         print(f"[PRICE VALIDATION] {symbol}: ❌ No stop loss or targets provided, skipping validation")
@@ -322,6 +350,11 @@ def validate_trading_prices(entry: float, stop: float, targets: list,
         "validation_passed": True,
         "warnings": []
     }
+
+    # Keep validated dict in sync with (possibly reanchored) entry/stop/targets
+    validated["entry_price"] = entry
+    validated["stop_loss"] = stop
+    validated["targets"] = targets
 
     # Validation 1: Stop loss position validation (direction depends on position type)
     if stop is not None:
@@ -401,11 +434,9 @@ def validate_trading_prices(entry: float, stop: float, targets: list,
         rr_ratio = reward / risk if risk > 0 else 0
 
         if rr_ratio < 2.0:
-            warning = f"Risk/Reward ratio {rr_ratio:.2f}:1 below minimum 2:1 — rejecting bracket prices"
-            print(f"[PRICE VALIDATION] {symbol}: ❌ {warning}")
+            warning = f"Risk/Reward ratio {rr_ratio:.2f}:1 below minimum 2:1 (warning only)"
+            print(f"[PRICE VALIDATION] {symbol}: ⚠️ {warning}")
             validated["warnings"].append(warning)
-            validated["validation_passed"] = False
-            return None  # Hard fail — don't place bracket with sub-2:1 R/R
         else:
             print(f"[PRICE VALIDATION] {symbol}: Risk/Reward ratio {rr_ratio:.2f}:1 ✓")
 

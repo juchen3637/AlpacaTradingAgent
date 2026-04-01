@@ -827,8 +827,14 @@ class AlpacaUtils:
                         quote = AlpacaUtils.get_latest_quote(symbol)
                         price = quote.get("ask_price") or quote.get("bid_price")
                         if price and price > 0:
-                            resolved_qty = max(1, int(notional // price))
-                            print(f"[BRACKET] Converted notional ${notional:.2f} → {resolved_qty} shares @ ${price:.2f} for GTC bracket")
+                            computed_qty = int(notional // price)
+                            if computed_qty <= 0:
+                                print(f"[BRACKET] ⚠️ Notional ${notional:.2f} too small for 1 share at ${price:.2f}, falling back to notional + DAY")
+                                resolved_notional = round(notional, 2)
+                                time_in_force = TimeInForce.DAY
+                            else:
+                                resolved_qty = computed_qty
+                                print(f"[BRACKET] Converted notional ${notional:.2f} → {resolved_qty} shares @ ${price:.2f} for GTC bracket")
                         else:
                             raise ValueError("invalid price")
                     except Exception as e:
