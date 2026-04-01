@@ -505,15 +505,10 @@ class AlpacaUtils:
             # Determine order side
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
             
-            # Determine proper time-in-force. GTC is used for both equity and crypto:
-            # - Crypto requires GTC (DAY is not accepted by Alpaca for crypto).
-            # - Equity market orders fill immediately in practice during regular hours,
-            #   so GTC vs DAY makes no observable difference for normal fills. However,
-            #   using GTC here is consistent with the standalone stop/limit helpers and
-            #   avoids a subtle edge case: if place_market_order is called just before
-            #   market close, a DAY order could expire unfilled, leaving any subsequently
-            #   placed protective orders associated with zero shares.
-            tif = TimeInForce.GTC  # GTC for both equity and crypto
+            # Alpaca requires DAY for notional (fractional) stock orders.
+            # Crypto requires GTC (DAY is not accepted by Alpaca for crypto).
+            is_crypto = alpaca_symbol.endswith("USD") and len(alpaca_symbol) > 3
+            tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
 
             # Create market order request
             if notional and notional > 0:
@@ -813,30 +808,44 @@ class AlpacaUtils:
             # Normalize symbol for Alpaca
             alpaca_symbol = symbol.upper().replace("/", "")
 
-            # GTC for both equity and crypto: bracket legs (stop-loss and take-profit)
-            # inherit time_in_force from the parent MarketOrderRequest. Using GTC ensures
-            # legs remain active overnight after an intraday fill, protecting the position.
-            # With DAY, legs would expire at the session close, leaving the position naked.
-            time_in_force = TimeInForce.GTC
+            is_crypto = alpaca_symbol.endswith("USD") and len(alpaca_symbol) > 3
+
+            # Determine time_in_force and qty vs notional.
+            # Crypto: notional + GTC (Alpaca accepts this; GTC keeps legs active overnight).
+            # Stock with notional: Alpaca requires DAY for notional orders, but DAY bracket
+            # legs expire at session close, leaving overnight positions unprotected.
+            # Fix: convert notional → integer qty for stocks so we can use GTC.
+            resolved_qty = qty
+            resolved_notional = None
+            if is_crypto:
+                resolved_notional = round(notional, 2) if notional else None
+                time_in_force = TimeInForce.GTC
+            else:
+                time_in_force = TimeInForce.GTC
+                if notional and not qty:
+                    try:
+                        quote = AlpacaUtils.get_latest_quote(symbol)
+                        price = quote.get("ask_price") or quote.get("bid_price")
+                        if price and price > 0:
+                            resolved_qty = max(1, int(notional // price))
+                            print(f"[BRACKET] Converted notional ${notional:.2f} → {resolved_qty} shares @ ${price:.2f} for GTC bracket")
+                        else:
+                            raise ValueError("invalid price")
+                    except Exception as e:
+                        print(f"[BRACKET] ⚠️ Price fetch failed ({e}), falling back to notional + DAY")
+                        resolved_notional = round(notional, 2)
+                        time_in_force = TimeInForce.DAY
+                else:
+                    resolved_notional = round(notional, 2) if notional else None
 
             # Build bracket order request
             order_data = MarketOrderRequest(
                 symbol=alpaca_symbol,
-                qty=qty,
-                notional=round(notional, 2) if notional else notional,
+                qty=resolved_qty,
+                notional=resolved_notional,
                 side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
                 time_in_force=time_in_force,
                 order_class=OrderClass.BRACKET,
-                # NOTE on time_in_force for bracket legs:
-                # - The Alpaca REST API only accepts time_in_force on the top-level order
-                #   object. The stop_loss and take_profit sub-objects have no time_in_force
-                #   field in either the REST schema or the SDK models.
-                # - StopLossRequest only accepts `stop_price` and optional `limit_price`.
-                # - TakeProfitRequest only accepts `limit_price`.
-                # - Both bracket legs automatically inherit time_in_force from the parent
-                #   MarketOrderRequest. Because the parent uses TimeInForce.GTC (see above),
-                #   the stop-loss and take-profit legs will remain active overnight after an
-                #   intraday fill — they are NOT cancelled at the end of the trading day.
                 stop_loss=StopLossRequest(stop_price=stop_loss) if stop_loss else None,
                 take_profit=TakeProfitRequest(limit_price=take_profit) if take_profit else None
             )
