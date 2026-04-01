@@ -518,11 +518,12 @@ class AlpacaUtils:
             # Create market order request
             if notional and notional > 0:
                 # Use notional (dollar amount) for fractional shares
+                # Alpaca requires notional to have at most 2 decimal places
                 order_request = MarketOrderRequest(
                     symbol=alpaca_symbol,
                     side=order_side,
                     time_in_force=tif,
-                    notional=notional
+                    notional=round(notional, 2)
                 )
             elif qty and qty > 0:
                 # Use quantity (number of shares)
@@ -822,7 +823,7 @@ class AlpacaUtils:
             order_data = MarketOrderRequest(
                 symbol=alpaca_symbol,
                 qty=qty,
-                notional=notional,
+                notional=round(notional, 2) if notional else notional,
                 side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
                 time_in_force=time_in_force,
                 order_class=OrderClass.BRACKET,
