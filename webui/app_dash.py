@@ -130,6 +130,14 @@ def create_app():
     # Register all callbacks
     register_all_callbacks(app)
 
+    # Auto-resume market-hour mode if a state file was saved before the last restart
+    from webui.utils.state import load_market_hour_state
+    saved = load_market_hour_state()
+    if saved:
+        print("[STARTUP] Resuming market-hour mode from saved state")
+        from webui.callbacks.control_callbacks import _launch_market_hour_thread
+        _launch_market_hour_thread(saved["symbols"], saved["config"], saved["hours"])
+
     return app
 
 
