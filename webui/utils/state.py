@@ -2,6 +2,37 @@
 Trading Agents Framework - State Management
 """
 
+import json
+from pathlib import Path
+
+_MARKET_HOUR_STATE_FILE = Path(__file__).resolve().parent.parent / ".market_hour_state.json"
+
+
+def _save_market_hour_state(symbols, config, hours):
+    try:
+        _MARKET_HOUR_STATE_FILE.write_text(json.dumps({
+            "symbols": symbols,
+            "config": config,
+            "hours": hours,
+        }))
+    except OSError:
+        pass
+
+
+def load_market_hour_state():
+    try:
+        return json.loads(_MARKET_HOUR_STATE_FILE.read_text())
+    except Exception:
+        return None
+
+
+def _clear_market_hour_state():
+    try:
+        _MARKET_HOUR_STATE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 # Global variables for tracking state
 class AppState:
     def __init__(self):
@@ -479,6 +510,7 @@ class AppState:
         self.market_hour_config = config
         self.market_hours = hours
         self.stop_market_hour = False
+        _save_market_hour_state(symbols, config, hours)
         print(f"[STATE] Starting market hour mode with {len(symbols)} symbols, hours: {hours}")
 
     def stop_market_hour_mode(self):
@@ -486,6 +518,7 @@ class AppState:
         self.stop_market_hour = True
         self.market_hour_enabled = False
         self.analysis_running = False
+        _clear_market_hour_state()
         print("[STATE] Stopping market hour mode")
     
     def start_new_session_for_symbol(self, symbol):

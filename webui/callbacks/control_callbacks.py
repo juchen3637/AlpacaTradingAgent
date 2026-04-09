@@ -85,6 +85,72 @@ def process_symbols_in_parallel_batches(
     print(f"[PARALLEL_BATCH] All batches completed for {total_symbols} symbols")
 
 
+def _run_market_hour_loop(symbols, config, hours):
+    """Core market-hour scheduling loop. Runs inside a background thread."""
+    market_hour_start, market_hour_end = hours[0], hours[1]
+
+    import datetime
+    import pytz as _pytz
+    from webui.utils.market_hours import get_next_run_datetime
+    _eastern = _pytz.timezone('US/Eastern')
+
+    first_run = True
+    while not app_state.stop_market_hour:
+        now = datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern)
+        next_dt, run_now = get_next_run_datetime(
+            market_hour_start, market_hour_end, from_datetime=now, immediate=first_run
+        )
+        first_run = False
+
+        if not run_now:
+            print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')}")
+            while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
+                time.sleep(30)
+
+        if app_state.stop_market_hour:
+            break
+
+        fire_hour = next_dt.hour if not run_now else now.hour
+        print(f"[MARKET_HOUR] Running analysis at {fire_hour}:00 EST/EDT")
+
+        app_state.reset_for_loop()
+        for symbol in symbols:
+            app_state.init_symbol_state(symbol)
+
+        process_symbols_in_parallel_batches(
+            symbols,
+            config.get('analysts_market', True),
+            config.get('analysts_social', True),
+            config.get('analysts_news', True),
+            config.get('analysts_fundamentals', True),
+            config.get('analysts_macro', True),
+            config.get('research_depth', 'moderate'),
+            config.get('allow_shorts', False),
+            config.get('quick_llm', 'gpt-4o-mini'),
+            config.get('deep_llm', 'gpt-4o'),
+            config.get('parallel_execution', False),
+            batch_size=config.get('batch_size', app_state.batch_size),
+            batch_delay=config.get('batch_delay', app_state.batch_delay),
+            stop_condition=lambda: app_state.stop_market_hour,
+            llm_provider=config.get('llm_provider', 'openai')
+        )
+
+        if not app_state.stop_market_hour:
+            print(f"[MARKET_HOUR] Analysis complete for {fire_hour}:00. Scheduling next run...")
+
+    app_state.analysis_running = False
+
+
+def _launch_market_hour_thread(symbols, config, hours):
+    """Launch the market-hour scheduling loop in a background thread (used for auto-resume on startup)."""
+    if app_state.analysis_running:
+        return
+    app_state.start_market_hour_mode(symbols, config, hours)
+    app_state.analysis_running = True
+    thread = threading.Thread(target=_run_market_hour_loop, args=(symbols, config, hours))
+    thread.start()
+
+
 def register_control_callbacks(app):
     """Register all control and configuration callbacks"""
 
@@ -736,7 +802,6 @@ def register_control_callbacks(app):
 
         def analysis_thread():
             if market_hour_enabled:
-                # Start market hour mode with scheduling logic
                 market_hour_config = {
                     'analysts_market': analysts_market,
                     'analysts_social': analysts_social,
@@ -750,53 +815,12 @@ def register_control_callbacks(app):
                     'llm_provider': llm_provider,
                     'trade_enabled': trade_enabled,
                     'trade_amount': trade_amount,
-                    'parallel_execution': parallel_execution
+                    'parallel_execution': parallel_execution,
+                    'batch_size': batch_size,
+                    'batch_delay': batch_delay,
                 }
                 app_state.start_market_hour_mode(symbols, market_hour_config, [market_hour_start, market_hour_end])
-
-                # Market hour scheduling loop
-                import datetime
-                import pytz as _pytz
-                from webui.utils.market_hours import get_next_run_datetime
-                _eastern = _pytz.timezone('US/Eastern')
-
-                first_run = True
-                while not app_state.stop_market_hour:
-                    now = datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern)
-                    next_dt, run_now = get_next_run_datetime(
-                        market_hour_start, market_hour_end, from_datetime=now, immediate=first_run
-                    )
-                    first_run = False
-
-                    if not run_now:
-                        print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')}")
-                        # Sleep until next_dt, checking for stop every 30s
-                        while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
-                            time.sleep(30)
-
-                    if app_state.stop_market_hour:
-                        break
-
-                    fire_hour = next_dt.hour if not run_now else now.hour
-                    print(f"[MARKET_HOUR] Running analysis at {fire_hour}:00 EST/EDT")
-
-                    # Reset states for new analysis run
-                    app_state.reset_for_loop()
-                    for symbol in symbols:
-                        app_state.init_symbol_state(symbol)
-
-                    process_symbols_in_parallel_batches(
-                        symbols,
-                        analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
-                        research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
-                        batch_size=batch_size,
-                        batch_delay=batch_delay,
-                        stop_condition=lambda: app_state.stop_market_hour,
-                        llm_provider=llm_provider
-                    )
-
-                    if not app_state.stop_market_hour:
-                        print(f"[MARKET_HOUR] Analysis complete for {fire_hour}:00. Scheduling next run...")
+                _run_market_hour_loop(symbols, market_hour_config, [market_hour_start, market_hour_end])
             
             elif loop_enabled:
                 # Start loop mode

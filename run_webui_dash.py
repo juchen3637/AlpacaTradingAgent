@@ -91,9 +91,12 @@ def main():
 
     def _shutdown_handler(signum, frame):
         import logging
+        from webui.utils.state import app_state
         logging.getLogger(__name__).info(
             "Received shutdown signal, shutting down gracefully"
         )
+        app_state.stop_loop_mode()
+        app_state.stop_market_hour_mode()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown_handler)
