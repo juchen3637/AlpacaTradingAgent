@@ -10,19 +10,17 @@ def create_config_panel():
     """Create the configuration panel for the web UI."""
     return dbc.Card(
         dbc.CardBody([
-            html.H4("Analysis Configuration", className="mb-3"),
-            html.Hr(),
-            dbc.Row([
-                dbc.Col([
-                    dbc.Input(
-                        id="ticker-input",
-                        type="text",
-                        placeholder="Enter stock symbols (e.g., AAPL,NVDA)",
-                        value="NVDA, AMD, TSLA",
-                        className="mb-2"
-                    ),
-                ], width=12),
-            ]),
+            html.Div(
+                [
+                    html.Span("tune", className="material-symbols-outlined",
+                               style={"color": "#3B82F6", "fontSize": "18px"}),
+                    html.Span("AGENT CONFIGURATION",
+                               style={"fontFamily": "'Space Grotesk', sans-serif",
+                                      "fontWeight": "700", "fontSize": "13px",
+                                      "letterSpacing": "1px", "marginLeft": "8px"}),
+                ],
+                style={"display": "flex", "alignItems": "center", "marginBottom": "16px"},
+            ),
             html.H5("Select Analysts:", className="mt-3"),
             dbc.Row([
                 dbc.Col([
@@ -336,16 +334,6 @@ def create_config_panel():
                     ),
                 ]
             ),
-            html.Div(id="control-button-container", children=[
-                dbc.Button(
-                    "Start Analysis",
-                    id="control-btn",
-                    color="primary",
-                    size="lg",
-                    className="w-100 mt-2"
-                )
-            ]),
-            html.Div(id="result-text", className="mt-3")
         ]),
-        className="mb-4",
+        className="mb-4 glass-card",
     ) 

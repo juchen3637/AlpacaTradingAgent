@@ -19,10 +19,9 @@ def register_trading_callbacks(app):
          Output("orders-table-container", "children"),
          Output("account-summary-container", "children")],
         [Input("slow-refresh-interval", "n_intervals"),
-         Input("refresh-btn", "n_clicks"),
          Input("refresh-alpaca-btn", "n_clicks")]
     )
-    def update_enhanced_alpaca_tables(n_intervals, n_clicks, alpaca_refresh):
+    def update_enhanced_alpaca_tables(n_intervals, alpaca_refresh):
         """Update the enhanced positions and orders tables"""
         try:
             orders_data = AlpacaUtils.get_recent_orders(limit=100)

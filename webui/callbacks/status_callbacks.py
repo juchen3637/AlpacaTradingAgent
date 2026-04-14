@@ -14,10 +14,9 @@ def register_status_callbacks(app):
     
     @app.callback(
         Output("status-table", "children"),
-        [Input("refresh-interval", "n_intervals"),
-         Input("refresh-btn", "n_clicks")]
+        [Input("refresh-interval", "n_intervals")]
     )
-    def update_status_table(n_intervals, n_clicks):
+    def update_status_table(n_intervals):
         """Update the agent status table"""
         current_state = app_state.get_current_state()
         if not current_state:
