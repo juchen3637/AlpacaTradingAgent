@@ -278,5 +278,5 @@ def create_reports_panel():
                 )
             ], style={"display": "none"})  # Additional CSS hiding
         ]),
-        className="reports-panel-card mb-4"
+        className="reports-panel-card mb-4 glass-card"
     ) 
