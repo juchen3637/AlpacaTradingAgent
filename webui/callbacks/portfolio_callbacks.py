@@ -119,6 +119,7 @@ def register_portfolio_callbacks(app):
     @app.callback(
         Output("portfolio-equity-chart", "figure"),
         [Input("slow-refresh-interval", "n_intervals"),
+         Input("portfolio-period-1d", "n_clicks"),
          Input("portfolio-period-1w", "n_clicks"),
          Input("portfolio-period-1m", "n_clicks"),
          Input("portfolio-period-3m", "n_clicks"),
@@ -127,17 +128,27 @@ def register_portfolio_callbacks(app):
     )
     def update_equity_chart(_n, *_period_clicks):
         try:
-            from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+            from datetime import datetime, timezone
 
             period_map = {
+                "portfolio-period-1d": ("1D", "5Min"),
                 "portfolio-period-1w": ("1W", "15Min"),
                 "portfolio-period-1m": ("1M", "1D"),
                 "portfolio-period-3m": ("3M", "1D"),
                 "portfolio-period-1y": ("1A", "1D"),
                 "portfolio-period-all": ("all", "1D"),
             }
+            tick_format_map = {
+                "portfolio-period-1d": ("%I:%M %p", 3600000),
+                "portfolio-period-1w": ("%a %b %d", 86400000),
+                "portfolio-period-1m": ("%b %d", None),
+                "portfolio-period-3m": ("%b %d", None),
+                "portfolio-period-1y": ("%b '%y", None),
+                "portfolio-period-all": ("%b '%y", None),
+            }
             triggered = ctx.triggered_id or "portfolio-period-1m"
             period, timeframe = period_map.get(triggered, ("1M", "1D"))
+            tick_fmt, tick_dtick = tick_format_map.get(triggered, ("%b %d", None))
 
             from tradingagents.dataflows.alpaca_utils import get_alpaca_trading_client
             client = get_alpaca_trading_client()
@@ -148,27 +159,51 @@ def register_portfolio_callbacks(app):
             if not history or not history.equity:
                 return _empty_chart("No portfolio history available")
 
-            timestamps = [t.isoformat() if hasattr(t, 'isoformat') else str(t)
-                          for t in history.timestamp]
+            timestamps = []
+            for t in history.timestamp:
+                if isinstance(t, (int, float)):
+                    timestamps.append(datetime.fromtimestamp(t, tz=timezone.utc))
+                elif hasattr(t, 'isoformat'):
+                    timestamps.append(t)
+                else:
+                    timestamps.append(datetime.fromisoformat(str(t)))
             equity = list(history.equity)
+
+            y_min = min(equity)
+            y_max = max(equity)
+            y_padding = max((y_max - y_min) * 0.1, y_max * 0.001)
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
+                x=timestamps, y=[y_min - y_padding] * len(timestamps),
+                mode="lines", line=dict(width=0),
+                showlegend=False, hoverinfo="skip",
+            ))
+            fig.add_trace(go.Scatter(
                 x=timestamps, y=equity,
                 mode="lines",
-                fill="tozeroy",
+                fill="tonexty",
                 fillcolor="rgba(59, 130, 246, 0.1)",
                 line=dict(color="#3B82F6", width=2),
                 hovertemplate="$%{y:,.2f}<extra>%{x}</extra>",
             ))
+
+            xaxis_config = dict(
+                gridcolor="rgba(51,65,85,0.3)", showgrid=True,
+                tickformat=tick_fmt,
+            )
+            if tick_dtick is not None:
+                xaxis_config["dtick"] = tick_dtick
+
             fig.update_layout(
                 template="plotly_dark",
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
                 font=dict(family="Inter", color="#94A3B8"),
-                xaxis=dict(gridcolor="rgba(51,65,85,0.3)", showgrid=True),
+                xaxis=xaxis_config,
                 yaxis=dict(gridcolor="rgba(51,65,85,0.3)", showgrid=True,
-                           tickformat="$,.0f"),
+                           tickformat="$,.0f",
+                           range=[y_min - y_padding, y_max + y_padding]),
                 margin=dict(l=60, r=20, t=10, b=40),
                 hovermode="x unified",
             )
