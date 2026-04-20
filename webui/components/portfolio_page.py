@@ -67,6 +67,7 @@ def create_portfolio_page():
                 html.Div([
                     _section_header("show_chart", "EQUITY CURVE"),
                     dbc.ButtonGroup([
+                        dbc.Button("1D", id="portfolio-period-1d", color="secondary", outline=True, size="sm"),
                         dbc.Button("1W", id="portfolio-period-1w", color="secondary", outline=True, size="sm"),
                         dbc.Button("1M", id="portfolio-period-1m", color="secondary", outline=True, size="sm"),
                         dbc.Button("3M", id="portfolio-period-3m", color="secondary", outline=True, size="sm"),
