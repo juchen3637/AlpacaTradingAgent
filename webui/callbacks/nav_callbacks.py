@@ -18,11 +18,15 @@ _PAGE_MAP = {
     "nav-dashboard": "dashboard",
     "nav-analytics": "analytics",
     "nav-portfolio": "portfolio",
+    "nav-journal": "journal",
     "nav-config": "config",
 }
 
 _NAV_IDS = list(_PAGE_MAP.keys())
-_PAGE_IDS = ["page-dashboard", "page-analytics", "page-portfolio", "page-config"]
+_PAGE_IDS = [
+    "page-dashboard", "page-analytics", "page-portfolio",
+    "page-journal", "page-config",
+]
 
 
 def register_nav_callbacks(app):

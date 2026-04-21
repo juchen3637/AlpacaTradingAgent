@@ -48,10 +48,11 @@ APP_CONFIG = {
     "update_title": None,
 }
 
-# Sidebar navigation items (4 tabs only)
+# Sidebar navigation items
 SIDEBAR_NAV = [
     {"icon": "dashboard", "label": "Dashboard", "id": "nav-dashboard"},
     {"icon": "analytics", "label": "Analytics", "id": "nav-analytics"},
     {"icon": "pie_chart", "label": "Portfolio", "id": "nav-portfolio"},
+    {"icon": "receipt_long", "label": "Journal", "id": "nav-journal"},
     {"icon": "settings", "label": "Config", "id": "nav-config"},
-] 
+]
