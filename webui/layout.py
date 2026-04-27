@@ -16,6 +16,8 @@ from webui.components.alpaca_account import render_alpaca_account_section
 from webui.components.batch_overview_panel import create_batch_overview_panel
 from webui.components.debug_panel import create_debug_panel
 from webui.components.portfolio_page import create_portfolio_page
+from webui.components.journal_page import create_journal_page
+from webui.components.scanner_page import create_scanner_page
 from webui.config.constants import COLORS, REFRESH_INTERVALS
 
 
@@ -111,6 +113,20 @@ def _create_portfolio_page():
     ], style={"display": "none"})
 
 
+def _create_journal_page():
+    """Journal: every AI decision with full agent reasoning and trade outcomes."""
+    return html.Div(id="page-journal", children=[
+        create_journal_page(),
+    ], style={"display": "none"})
+
+
+def _create_scanner_page():
+    """Trading: ticker scanner + AI strategy playbook."""
+    return html.Div(id="page-scanner", children=[
+        create_scanner_page(),
+    ], style={"display": "none"})
+
+
 def _create_config_page():
     """Config: all analysis configuration options."""
     return html.Div(id="page-config", children=[
@@ -156,6 +172,8 @@ def create_main_layout():
             _create_dashboard_page(),
             _create_analytics_page(),
             _create_portfolio_page(),
+            _create_journal_page(),
+            _create_scanner_page(),
             _create_config_page(),
         ], className="main-content-with-sidebar p-3 p-md-4",
            style={"backgroundColor": COLORS["background"], "minHeight": "100vh"}),

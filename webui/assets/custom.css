@@ -464,6 +464,63 @@ h1, h2, h3, h4, h5, h6, .font-headline {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2394A3B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
 }
 
+/* dcc.Dropdown (react-select) — dark theme globally */
+.Select-control,
+.VirtualizedSelectFocusedOption,
+.Select-menu-outer,
+.Select-menu,
+.Select-option,
+.VirtualizedSelectOption,
+.Select-input > input,
+.Select-value-label,
+.Select-placeholder {
+    background-color: #0B1120 !important;
+    color: #F1F5F9 !important;
+}
+
+.Select-control {
+    border-color: #334155 !important;
+}
+
+.Select-menu-outer {
+    border-color: #334155 !important;
+    z-index: 9999 !important;
+}
+
+.Select-option.is-focused,
+.VirtualizedSelectFocusedOption {
+    background-color: rgba(59, 130, 246, 0.2) !important;
+    color: #F1F5F9 !important;
+}
+
+.Select-option.is-selected {
+    background-color: rgba(59, 130, 246, 0.35) !important;
+    color: #F1F5F9 !important;
+}
+
+.Select-value-label,
+.Select--single > .Select-control .Select-value .Select-value-label {
+    color: #F1F5F9 !important;
+}
+
+.Select-placeholder,
+.Select--single > .Select-control .Select-value {
+    color: #94A3B8 !important;
+}
+
+.Select-arrow {
+    border-color: #94A3B8 transparent transparent !important;
+}
+
+.is-open > .Select-control .Select-arrow {
+    border-color: transparent transparent #94A3B8 !important;
+}
+
+.Select.is-focused:not(.is-open) > .Select-control {
+    border-color: #3B82F6 !important;
+    box-shadow: 0 0 0 1px #3B82F6 !important;
+}
+
 /* Radio items inline */
 .form-check.form-check-inline {
     margin-right: 16px;

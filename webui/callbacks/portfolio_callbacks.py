@@ -10,7 +10,31 @@ import logging
 from dash import Input, Output, html, ctx
 import plotly.graph_objects as go
 
+from tradingagents.analytics.performance import (
+    calculate_max_drawdown,
+    calculate_sharpe_ratio,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _fetch_portfolio_equity(period: str = "3M", timeframe: str = "1D") -> list[float]:
+    """Fetch the equity curve from Alpaca. Returns [] on failure."""
+    try:
+        from tradingagents.dataflows.alpaca_utils import get_alpaca_trading_client
+        from alpaca.trading.requests import GetPortfolioHistoryRequest
+
+        client = get_alpaca_trading_client()
+        req = GetPortfolioHistoryRequest(period=period, timeframe=timeframe)
+        history = client.get_portfolio_history(req)
+
+        if not history or not history.equity:
+            return []
+        # Filter out None values (Alpaca sometimes returns gaps)
+        return [float(v) for v in history.equity if v is not None]
+    except Exception:
+        logger.exception("Failed to fetch portfolio equity")
+        return []
 
 
 def _empty_chart(message: str = "No data available") -> go.Figure:
@@ -110,7 +134,12 @@ def register_portfolio_callbacks(app):
             market_text = "OPEN" if is_open else "CLOSED"
             dot_cls = "market-status-dot open" if is_open else "market-status-dot closed"
 
-            return value_str, pl_str, wr_str, "—", value_str, top_pl, market_text, dot_cls
+            # Sharpe ratio from Alpaca 3-month daily equity curve
+            equity_curve = _fetch_portfolio_equity(period="3M", timeframe="1D")
+            sharpe = calculate_sharpe_ratio(equity_curve)
+            sharpe_str = f"{sharpe:.2f}" if sharpe is not None else "—"
+
+            return value_str, pl_str, wr_str, sharpe_str, value_str, top_pl, market_text, dot_cls
         except Exception:
             logger.exception("Portfolio callback error")
             return "—", "—", "—", "—", "—", "—", "—", "market-status-dot closed"
@@ -318,12 +347,20 @@ def register_portfolio_callbacks(app):
             total_exposure = sum(abs(_parse_num(p.get("Market Value", 0))) for p in positions)
             exposure_pct = (total_exposure / equity * 100) if equity > 0 else 0
 
+            # Max drawdown over the last 3 months of daily equity
+            equity_curve = _fetch_portfolio_equity(period="3M", timeframe="1D")
+            dd = calculate_max_drawdown(equity_curve)
+            if dd is not None:
+                mdd_str = f"-${dd.max_drawdown_dollars:,.2f} ({-dd.max_drawdown_percent:.2f}%)"
+            else:
+                mdd_str = "—"
+
             metrics = [
                 ("Buying Power", f"${buying_power:,.2f}"),
                 ("Daily P&L", f"{'+'if daily_change>=0 else ''}${daily_change:,.2f} ({daily_pct:+.1f}%)"),
                 ("Open Positions", str(num_positions)),
                 ("Total Exposure", f"${total_exposure:,.2f} ({exposure_pct:.0f}%)"),
-                ("Max Drawdown", "—"),
+                ("Max Drawdown (3M)", mdd_str),
             ]
 
             rows = []

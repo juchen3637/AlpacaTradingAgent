@@ -7,9 +7,48 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.agents.utils.agent_trading_modes import extract_recommendation
+from tradingagents.analytics import get_journal
+from tradingagents.analytics.trade_journal import (
+    TradeRecord,
+    build_decision_from_state,
+)
 from webui.utils.state import app_state
 from webui.utils.charts import create_chart
 from webui.watchdog import set_analysis_active, set_analysis_inactive, touch_analysis_flag
+
+
+def _record_trade_results(decision_id, ticker, trade_result):
+    """Walk the Alpaca execute_trading_action result and persist each filled leg.
+
+    Best-effort — never raises; journal write errors are logged and swallowed so
+    they can never break the trading flow.
+    """
+    try:
+        journal = get_journal()
+        for action_entry in trade_result.get("actions", []) or []:
+            action_name = action_entry.get("action", "unknown")
+            result = action_entry.get("result") or {}
+            # Skip no-op "hold" entries and failed actions with no order id
+            if not isinstance(result, dict):
+                continue
+            if not result.get("success") and not result.get("order_id"):
+                continue
+
+            side = result.get("side") or ("buy" if "long" in action_name.lower() or action_name == "buy" else "sell")
+            side_str = str(side).lower() if side is not None else "unknown"
+
+            journal.record_trade(TradeRecord(
+                decision_id=decision_id,
+                ticker=ticker,
+                side=side_str,
+                qty=float(result.get("filled_qty") or result.get("qty") or 0.0),
+                filled_price=float(result.get("filled_avg_price") or result.get("limit_price") or 0.0),
+                order_type=action_name,
+                alpaca_order_id=str(result.get("order_id")) if result.get("order_id") else None,
+                status=str(result.get("status")) if result.get("status") is not None else None,
+            ))
+    except Exception as e:
+        print(f"[JOURNAL] Failed to record trade legs for {ticker}: {e}")
 
 
 def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizing=True,
@@ -200,6 +239,11 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             entry_price=approved_prices.get("entry_price") if approved_prices else None
         )
         
+        # Persist each order leg to the trade journal (best-effort)
+        decision_id = state.get("journal_decision_id")
+        if decision_id:
+            _record_trade_results(decision_id, ticker, result)
+
         # Check individual action results and provide detailed feedback
         successful_actions = []
         failed_actions = []
@@ -250,6 +294,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
     thread_id = threading.current_thread().name
 
     current_state = None  # Ensure name is bound before try/finally so finally never hits NameError
+    analysis_start_time = time.time()
     try:
         # Set thread-local symbol for tool tracking (thread-safe for parallel batch execution)
         from tradingagents.agents.utils.agent_utils import set_thread_symbol
@@ -341,7 +386,35 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         
         # Use real chart data with current date (no end_date means most recent data)
         current_state["chart_data"] = create_chart(ticker, period="1y", end_date=None)
-        
+
+        # Persist the decision to the trade journal (best-effort)
+        try:
+            execution_time = time.time() - analysis_start_time
+            # AI-recommended size from trader/risk manager, if available
+            approved_size = final_state.get("approved_position_size") or {}
+            trader_size = final_state.get("recommended_position_size") or {}
+            ai_size = (
+                approved_size.get("recommended_size_dollars")
+                or trader_size.get("recommended_size_dollars")
+                or None
+            )
+            decision_record = build_decision_from_state(
+                ticker=ticker,
+                trade_date=current_date,
+                final_state=final_state,
+                signal=decision,
+                config=config,
+                selected_analysts=selected_analysts,
+                position_size_dollars=ai_size,
+                execution_time_seconds=execution_time,
+                allow_shorts=allow_shorts,
+            )
+            decision_id = get_journal().record_decision(decision_record)
+            current_state["journal_decision_id"] = decision_id
+            print(f"[JOURNAL] Recorded decision {decision_id} for {ticker} (signal={decision})")
+        except Exception as journal_exc:
+            print(f"[JOURNAL] Failed to record decision for {ticker}: {journal_exc}")
+
         current_state["analysis_complete"] = True
         
         # Execute trade if enabled
