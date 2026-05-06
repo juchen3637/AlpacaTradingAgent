@@ -5,7 +5,7 @@ webui/components/ui.py
 import gradio as gr
 from datetime import datetime
 from webui.utils.state import app_state
-from webui.utils.charts import create_chart, create_welcome_chart
+from webui.utils.charts_lwc import build_lwc_payload as create_chart, empty_lwc_payload as create_welcome_chart
 import time
 
 

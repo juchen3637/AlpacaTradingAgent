@@ -1,9 +1,12 @@
 """Candidate ticker universe builders.
 
-Three universes supported:
-- "watchlist": exact symbols the user provides in ScanFilters.watchlist
-- "most_active": Alpaca ScreenerClient.get_most_actives top N
-- "crypto": small hard-coded crypto universe (Phase 4 expands this)
+Universe resolution order:
+1. If `filters.watchlist` is non-empty, return exactly those symbols
+   (overrides `universe_kind`).
+2. Otherwise fall back to the default for `universe_kind`:
+   - "most_active" → Alpaca ScreenerClient.get_most_actives top N
+   - "crypto"      → hard-coded crypto universe
+   - "watchlist"   → [] (user picked watchlist mode but typed nothing)
 """
 
 from __future__ import annotations
@@ -58,20 +61,14 @@ def build(
     """
     fetcher = most_actives_fetcher or _fetch_most_actives
 
-    if filters.universe_kind == "watchlist":
+    # Non-empty watchlist always overrides — scan exactly what the user typed.
+    if filters.watchlist:
         return list(filters.watchlist)
 
-    if filters.universe_kind == "crypto":
-        base = list(_CRYPTO_DEFAULT_UNIVERSE[:DEFAULT_CRYPTO_UNIVERSE_LIMIT])
-        # Dedup with user watchlist additions
-        extras = [s for s in filters.watchlist if s not in base]
-        return base + extras
+    if filters.universe_kind == "watchlist":
+        return []
 
-    # default: most_active + watchlist, dedup
-    symbols = fetcher(DEFAULT_MOST_ACTIVE_LIMIT)
-    seen = set(symbols)
-    for sym in filters.watchlist:
-        if sym not in seen:
-            symbols.append(sym)
-            seen.add(sym)
-    return symbols
+    if filters.universe_kind == "crypto":
+        return list(_CRYPTO_DEFAULT_UNIVERSE[:DEFAULT_CRYPTO_UNIVERSE_LIMIT])
+
+    return fetcher(DEFAULT_MOST_ACTIVE_LIMIT)

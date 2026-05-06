@@ -696,15 +696,17 @@ def register_journal_callbacks(app):
             Input("journal-refresh-btn", "n_clicks"),
             Input("journal-ticker-filter", "value"),
             Input("journal-signal-filter", "value"),
+            Input("journal-source-filter", "value"),
             Input("journal-limit-filter", "value"),
         ],
     )
-    def _refresh_log(_n, ticker, signal, limit):
+    def _refresh_log(_n, ticker, signal, source, limit):
         try:
             journal = get_journal()
             decisions = journal.get_decisions(
                 ticker=ticker,
                 signal=None if not signal or signal == "ALL" else signal,
+                source=None if not source or source == "ALL" else source,
                 limit=int(limit or 100),
             )
             # Attach outcomes and trades so the table can show P&L and trade counts

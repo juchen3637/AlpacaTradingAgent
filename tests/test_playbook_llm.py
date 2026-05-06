@@ -66,6 +66,8 @@ def test_generate_playbook_happy_path():
     payload = _PlaybookSchema(
         thesis="Near ATH with volume.",
         entry_trigger="Break $1005 with vol",
+        entry_price=1005.0,
+        order_type="Buy Stop",
         stop_loss=995.0,
         profit_target_1=1015.0,
         profit_target_2=1025.0,
@@ -74,23 +76,35 @@ def test_generate_playbook_happy_path():
         indicators_to_watch=["VWAP", "MACD"],
         invalidation="Close below VWAP.",
         confidence="high",
+        qualification_reason=(
+            "Within 1% of ATH ($1010) with RVOL 3.5 — exactly the profile this "
+            "strategy looks for."
+        ),
+        confidence_reason=(
+            "Catalyst, volume, and price-above-VWAP all aligned."
+        ),
     )
     llm = _build_mock_llm(payload)
     pb = generate_playbook(_result(), llm=llm)
     assert pb.symbol == "NVDA"
     assert pb.strategy_id == "ATH_BREAKOUT"
+    assert pb.entry_price == 1005.0
     assert pb.stop_loss == 995.0
     assert pb.profit_target_1 == 1015.0
     assert pb.confidence == "high"
     assert pb.indicators_to_watch == ("VWAP", "MACD")
+    assert "RVOL 3.5" in pb.qualification_reason
+    assert pb.confidence_reason
 
 
 @pytest.mark.unit
 def test_generate_playbook_normalizes_confidence_case():
     payload = _PlaybookSchema(
-        thesis="t", entry_trigger="e", stop_loss=1, profit_target_1=2,
-        profit_target_2=3, risk_reward=1, position_size_pct=0.1,
+        thesis="t", entry_trigger="e", entry_price=1.5, order_type="Buy Stop",
+        stop_loss=1, profit_target_1=2, profit_target_2=3, risk_reward=1,
+        position_size_pct=0.1,
         indicators_to_watch=[], invalidation="inv", confidence="HIGH",
+        qualification_reason="q", confidence_reason="c",
     )
     pb = generate_playbook(_result(), llm=_build_mock_llm(payload))
     assert pb.confidence == "high"
@@ -127,13 +141,23 @@ def test_fallback_playbook_risk_reward_positive():
     assert pb.position_size_pct == 0.05
 
 
+@pytest.mark.unit
+def test_fallback_playbook_populates_qualification_and_confidence_reasons():
+    pb = _fallback_playbook(_result())
+    assert "rule-based fallback" in pb.qualification_reason.lower()
+    assert "RVOL 3.5" in pb.qualification_reason
+    assert "low" in pb.confidence_reason.lower()
+
+
 # ─── provider/model overrides ───────────────────────────────────────────
 
 def _ok_payload() -> _PlaybookSchema:
     return _PlaybookSchema(
-        thesis="t", entry_trigger="e", stop_loss=1.0, profit_target_1=2.0,
-        profit_target_2=3.0, risk_reward=2.0, position_size_pct=0.05,
+        thesis="t", entry_trigger="e", entry_price=1.5, order_type="Buy Stop",
+        stop_loss=1.0, profit_target_1=2.0, profit_target_2=3.0,
+        risk_reward=2.0, position_size_pct=0.05,
         indicators_to_watch=[], invalidation="inv", confidence="medium",
+        qualification_reason="q", confidence_reason="c",
     )
 
 

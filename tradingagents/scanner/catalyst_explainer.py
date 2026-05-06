@@ -35,7 +35,10 @@ _SYSTEM_PROMPT = (
     "You are an equity research assistant. Given a stock ticker and a structured "
     "catalyst signal (earnings, M&A, FDA, management change, insider activity, "
     "filing, corporate action, or news), use web search to find credible recent "
-    "sources and explain in ≤250 words *why* this stock is moving today. "
+    "sources and explain in ≤250 words: (1) what the catalyst is, (2) whether "
+    "it is *favorable or unfavorable* for the stock and why, and (3) what it "
+    "implies about the company's outlook. End with one short line "
+    "`Verdict: bullish | bearish | mixed`. "
     "Format as concise markdown. Cite sources inline as [domain](url) links. "
     "If web search returns no credible source, say so explicitly — do not invent. "
     "Skip preamble; lead with the conclusion."
@@ -63,8 +66,10 @@ def _build_user_prompt(symbol: str, facts: CatalystFacts) -> str:
             lines.append(f"- {head}")
     lines.extend([
         "",
-        "Explain in ≤250 words why this stock is moving today. "
-        "Use web search to confirm the move and add context (price action, sector reaction).",
+        "Explain in ≤250 words: what is the catalyst, is it favorable or "
+        "unfavorable for the stock, and what does it imply about the company's "
+        "outlook? Use web search to confirm and add context (price action, "
+        "sector reaction). Finish with `Verdict: bullish | bearish | mixed`.",
     ])
     return "\n".join(lines)
 

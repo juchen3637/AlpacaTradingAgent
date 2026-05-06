@@ -290,3 +290,42 @@ def test_streaks_all_wins():
         assert s["current_streak"] == 3
     finally:
         os.unlink(tmp.name)
+
+
+# ─── Source filter (Analysis tab Scanner-only view) ─────────────────────
+
+
+def test_get_decisions_filters_by_source():
+    """Journal source filter cleanly separates scanner / agent / backfill."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        j = TradeJournal(db_path=tmp.name)
+        j.record_decision(DecisionRecord(
+            ticker="NVDA", trade_date="2026-04-30", signal="BUY",
+            source="agent", selected_analysts=[],
+        ))
+        j.record_decision(DecisionRecord(
+            ticker="AMD", trade_date="2026-04-30", signal="BUY",
+            source="scanner", source_order_id="scanner:ATH_BREAKOUT:abc1234567",
+            selected_analysts=[],
+        ))
+        j.record_decision(DecisionRecord(
+            ticker="TSLA", trade_date="2026-04-30", signal="SELL",
+            source="backfill", source_order_id="alpaca-historical-1",
+            selected_analysts=[],
+        ))
+
+        scanner_only = j.get_decisions(source="scanner")
+        assert len(scanner_only) == 1
+        assert scanner_only[0]["ticker"] == "AMD"
+        assert scanner_only[0]["source_order_id"].startswith("scanner:")
+
+        agent_only = j.get_decisions(source="agent")
+        assert len(agent_only) == 1
+        assert agent_only[0]["ticker"] == "NVDA"
+
+        all_decisions = j.get_decisions()
+        assert len(all_decisions) == 3
+    finally:
+        os.unlink(tmp.name)

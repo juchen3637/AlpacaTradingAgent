@@ -2,7 +2,7 @@
 
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Union, Optional, List
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, CryptoBarsRequest, StockLatestQuoteRequest, CryptoLatestQuoteRequest
@@ -16,6 +16,7 @@ from alpaca.trading.requests import (
     ClosePositionRequest,
     LimitOrderRequest,
     StopOrderRequest,
+    StopLimitOrderRequest,
     StopLossRequest,
     TakeProfitRequest
 )
@@ -872,6 +873,379 @@ class AlpacaUtils:
                 "success": False,
                 "error": str(e)
             }
+
+    @staticmethod
+    def submit_scanner_bracket_order(
+        *,
+        symbol: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit: float,
+        qty: int,
+        order_type: str,
+        client_order_id: str,
+        side: str = "buy",
+    ) -> dict:
+        """Submit a single-TP bracket order tagged with `client_order_id`.
+
+        Maps the playbook `order_type` string to the matching Alpaca request
+        class, attaches stop-loss + take-profit legs, and pushes the
+        client_order_id through so the scanner tag round-trips.
+
+        Returns dict with success / entry_order_id / client_order_id /
+        message / error.
+        """
+        valid_types = {"Buy Stop", "Buy Limit", "Buy Stop-Limit", "Buy Market"}
+        if order_type not in valid_types:
+            return {
+                "success": False,
+                "error": f"Unknown order_type '{order_type}'; expected one of {sorted(valid_types)}",
+            }
+
+        try:
+            client = get_alpaca_trading_client()
+            alpaca_symbol = symbol.upper().replace("/", "")
+            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+
+            common = {
+                "symbol": alpaca_symbol,
+                "qty": qty,
+                "side": order_side,
+                "time_in_force": TimeInForce.GTC,
+                "order_class": OrderClass.BRACKET,
+                "stop_loss": StopLossRequest(stop_price=stop_loss),
+                "take_profit": TakeProfitRequest(limit_price=take_profit),
+                "client_order_id": client_order_id,
+            }
+
+            if order_type == "Buy Stop":
+                request = StopOrderRequest(stop_price=entry_price, **common)
+            elif order_type == "Buy Limit":
+                request = LimitOrderRequest(limit_price=entry_price, **common)
+            elif order_type == "Buy Stop-Limit":
+                # Allow a tight slippage band above the stop trigger
+                limit_price = round(entry_price * 1.005, 2)
+                request = StopLimitOrderRequest(
+                    stop_price=entry_price, limit_price=limit_price, **common
+                )
+            else:  # "Buy Market"
+                request = MarketOrderRequest(**common)
+
+            order = client.submit_order(request)
+            return {
+                "success": True,
+                "entry_order_id": str(order.id),
+                "client_order_id": client_order_id,
+                "symbol": symbol,
+                "qty": qty,
+                "message": (
+                    f"{order_type} bracket submitted: entry ${entry_price:.2f}, "
+                    f"stop ${stop_loss:.2f}, target ${take_profit:.2f}"
+                ),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
+    @staticmethod
+    def get_scanner_orders(
+        symbol: Optional[str] = None,
+        since_minutes: int = 5,
+        limit: int = 100,
+    ) -> list:
+        """Return recent scanner-tagged orders shaped for chart consumption.
+
+        Filters Alpaca orders to those whose `client_order_id` starts with
+        `"scanner:"` (the prefix used by `submit_scanner_bracket_order`).
+        Optionally narrows to a single symbol and a recency window.
+
+        Returns a list of dicts: {"price", "qty", "time", "side", "status"}.
+        """
+        try:
+            client = get_alpaca_trading_client()
+            req = GetOrdersRequest(status="all", limit=limit, nested=False)
+            orders = list(client.get_orders(req))
+        except Exception as exc:
+            print(f"[get_scanner_orders] fetch failed: {exc}")
+            return []
+
+        cutoff = None
+        if since_minutes and since_minutes > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+
+        target_symbol = symbol.upper().replace("/", "") if symbol else None
+
+        results = []
+        for order in orders:
+            cid = getattr(order, "client_order_id", "") or ""
+            if not cid.startswith("scanner:"):
+                continue
+            if target_symbol and (order.symbol or "").upper() != target_symbol:
+                continue
+
+            ts = order.filled_at or order.submitted_at
+            if cutoff is not None and ts is not None and ts < cutoff:
+                continue
+            ts_iso = ts.isoformat() if ts is not None else None
+
+            try:
+                fill_price = float(order.filled_avg_price) if order.filled_avg_price else 0.0
+            except (TypeError, ValueError):
+                fill_price = 0.0
+            try:
+                qty = int(float(order.filled_qty)) if order.filled_qty else 0
+            except (TypeError, ValueError):
+                qty = 0
+
+            # Only emit a marker if we actually have a fill price
+            if fill_price <= 0 or not ts_iso:
+                continue
+
+            side_raw = order.side
+            side = (side_raw.value if hasattr(side_raw, "value") else str(side_raw)).lower()
+            status_raw = order.status
+            status = (status_raw.value if hasattr(status_raw, "value") else str(status_raw)).lower()
+
+            results.append({
+                "price": fill_price,
+                "qty": qty,
+                "time": ts_iso,
+                "side": side,
+                "status": status,
+                "symbol": order.symbol,
+                "client_order_id": cid,
+            })
+
+        return results
+
+    @staticmethod
+    def get_unfilled_scanner_orders(symbol: Optional[str] = None) -> list:
+        """Return scanner-tagged orders that have not yet filled.
+
+        Filters Alpaca's open-orders feed to entries whose client_order_id
+        starts with 'scanner:' AND whose status is one of
+        {new, accepted, pending_new, partially_filled, held}. Used to drive
+        the Cancel Order button in the Trading tab — these are the orders the
+        user can cancel before the bracket parent fills.
+
+        Returns a list of dicts:
+            {"id", "client_order_id", "symbol", "side", "qty", "status",
+             "limit_price", "stop_price", "submitted_at", "order_type"}
+        """
+        unfilled = {"new", "accepted", "pending_new", "partially_filled", "held"}
+        try:
+            client = get_alpaca_trading_client()
+        except Exception as exc:
+            print(f"[get_unfilled_scanner_orders] client init failed: {exc}")
+            return []
+
+        alpaca_symbol = symbol.upper().replace("/", "") if symbol else None
+        try:
+            req = GetOrdersRequest(
+                status="open",
+                symbols=[alpaca_symbol] if alpaca_symbol else None,
+                limit=100,
+                nested=False,
+            )
+            orders = list(client.get_orders(req))
+        except Exception as exc:
+            print(f"[get_unfilled_scanner_orders] fetch failed: {exc}")
+            return []
+
+        results = []
+        for order in orders:
+            cid = getattr(order, "client_order_id", "") or ""
+            if not cid.startswith("scanner:"):
+                continue
+
+            status_raw = order.status
+            status = (status_raw.value if hasattr(status_raw, "value")
+                      else str(status_raw)).lower()
+            if status not in unfilled:
+                continue
+
+            side_raw = order.side
+            side = (side_raw.value if hasattr(side_raw, "value")
+                    else str(side_raw)).lower()
+
+            try:
+                qty_val = int(float(order.qty)) if order.qty else 0
+            except (TypeError, ValueError):
+                qty_val = 0
+
+            try:
+                limit_price = float(order.limit_price) if order.limit_price else None
+            except (TypeError, ValueError):
+                limit_price = None
+
+            try:
+                stop_price = float(order.stop_price) if order.stop_price else None
+            except (TypeError, ValueError):
+                stop_price = None
+
+            order_type_attr = getattr(order, "order_type", None) or getattr(order, "type", None)
+            order_type = ((order_type_attr.value if hasattr(order_type_attr, "value")
+                           else str(order_type_attr)).lower()
+                          if order_type_attr is not None else "")
+
+            submitted_at = getattr(order, "submitted_at", None)
+            submitted_iso = submitted_at.isoformat() if submitted_at else None
+
+            results.append({
+                "id": str(order.id),
+                "client_order_id": cid,
+                "symbol": order.symbol,
+                "side": side,
+                "qty": qty_val,
+                "status": status,
+                "limit_price": limit_price,
+                "stop_price": stop_price,
+                "submitted_at": submitted_iso,
+                "order_type": order_type,
+            })
+
+        return results
+
+    @staticmethod
+    def cancel_unfilled_scanner_order(symbol: str) -> dict:
+        """Cancel scanner-tagged unfilled orders for `symbol`.
+
+        Cancelling a bracket parent auto-cancels its TP/SL children, so this
+        is the right call for the pre-fill Cancel Order flow. Will not touch
+        bracket legs of an already-filled position because those orders'
+        client_order_id does not have the 'scanner:' prefix on legs (only the
+        parent carries it) — and even if they did, status checking in
+        get_unfilled_scanner_orders excludes filled/active leg states.
+
+        Returns:
+            {"success", "cancelled", "cancelled_ids", "failed", "errors"}
+        """
+        orders = AlpacaUtils.get_unfilled_scanner_orders(symbol)
+        if not orders:
+            return {
+                "success": True,
+                "cancelled": 0,
+                "cancelled_ids": [],
+                "failed": 0,
+                "errors": [],
+            }
+
+        try:
+            client = get_alpaca_trading_client()
+        except Exception as exc:
+            return {
+                "success": False,
+                "cancelled": 0,
+                "cancelled_ids": [],
+                "failed": 0,
+                "errors": [f"client init failed: {exc}"],
+            }
+
+        cancelled = 0
+        failed = 0
+        cancelled_ids: list = []
+        errors: list = []
+        for o in orders:
+            try:
+                client.cancel_order_by_id(o["id"])
+                cancelled += 1
+                cancelled_ids.append(o["id"])
+            except Exception as exc:
+                failed += 1
+                errors.append(f"Failed to cancel order {o['id']}: {exc}")
+
+        return {
+            "success": failed == 0,
+            "cancelled": cancelled,
+            "cancelled_ids": cancelled_ids,
+            "failed": failed,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def get_position_with_brackets(symbol: str) -> Optional[dict]:
+        """Return open-position details + active bracket leg prices for `symbol`.
+
+        Returns None when no open position exists. Otherwise:
+            {
+                "qty": float,
+                "side": "long" | "short",
+                "avg_entry_price": float,
+                "current_price": float,
+                "unrealized_pl": float,
+                "unrealized_plpc": float,   # decimal, e.g. 0.0234 for +2.34%
+                "stop_loss": float | None,
+                "take_profit": float | None,
+                "market_value": float,
+            }
+        """
+        try:
+            client = get_alpaca_trading_client()
+        except Exception as exc:
+            print(f"[get_position_with_brackets] client init failed: {exc}")
+            return None
+
+        alpaca_symbol = symbol.upper().replace("/", "")
+
+        try:
+            position = client.get_open_position(alpaca_symbol)
+        except Exception:
+            return None
+
+        try:
+            qty = float(position.qty)
+            avg_entry = float(position.avg_entry_price)
+            current_price = float(position.current_price)
+            unrealized_pl = float(position.unrealized_pl)
+            unrealized_plpc = float(position.unrealized_plpc)
+            market_value = float(position.market_value)
+            side = (position.side.value if hasattr(position.side, "value") else str(position.side)).lower()
+        except (TypeError, ValueError, AttributeError) as exc:
+            print(f"[get_position_with_brackets] field parse failed: {exc}")
+            return None
+
+        # Closing legs are on the opposite side of the position.
+        closing_side = "sell" if side == "long" else "buy"
+
+        stop_price: Optional[float] = None
+        target_price: Optional[float] = None
+        try:
+            req = GetOrdersRequest(status="open", symbols=[alpaca_symbol], nested=False, limit=100)
+            for order in client.get_orders(req):
+                order_side = (order.side.value if hasattr(order.side, "value")
+                              else str(order.side)).lower()
+                if order_side != closing_side:
+                    # Skip the entry leg (still open if not yet filled).
+                    continue
+
+                # Stop-loss leg has a stop_price; take-profit leg has a limit_price.
+                # A stop-limit leg has both — prefer treating it as the stop side.
+                raw_stop = getattr(order, "stop_price", None)
+                raw_limit = getattr(order, "limit_price", None)
+
+                if raw_stop is not None and stop_price is None:
+                    try:
+                        stop_price = float(raw_stop)
+                    except (TypeError, ValueError):
+                        pass
+                elif raw_limit is not None and target_price is None:
+                    try:
+                        target_price = float(raw_limit)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception as exc:
+            print(f"[get_position_with_brackets] open-orders fetch failed: {exc}")
+
+        return {
+            "qty": qty,
+            "side": "long" if side == "long" else "short",
+            "avg_entry_price": avg_entry,
+            "current_price": current_price,
+            "unrealized_pl": unrealized_pl,
+            "unrealized_plpc": unrealized_plpc,
+            "market_value": market_value,
+            "stop_loss": stop_price,
+            "take_profit": target_price,
+        }
 
     @staticmethod
     def cancel_open_orders_for_symbol(symbol: str) -> dict:

@@ -4,7 +4,6 @@ webui/components/chart_panel.py - Chart panel with symbol-based pagination
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
-from webui.utils.charts import create_welcome_chart
 
 
 def create_symbol_pagination(pagination_id, max_symbols=1):
@@ -65,14 +64,13 @@ def create_chart_panel():
 
             # Chart
             html.Div(
-                dcc.Graph(
+                html.Div(
                     id="chart-container",
-                    figure=create_welcome_chart(),
-                    config={'displayModeBar': True, 'responsive': True},
-                    style={"height": "450px", "width": "100%"}
+                    style={"width": "100%", "height": "450px"},
                 ),
                 style={"height": "450px", "width": "100%", "overflow": "hidden"}
             ),
+            dcc.Store(id="chart-container-payload"),
 
             # Hidden pagination for callback compatibility
             html.Div([

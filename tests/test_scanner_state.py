@@ -18,7 +18,8 @@ def _snap(symbol: str = "NVDA") -> TickerSnapshot:
 def _playbook(symbol: str = "NVDA") -> Playbook:
     return Playbook(
         symbol=symbol, strategy_id="ATH_BREAKOUT",
-        thesis="t", entry_trigger="e",
+        thesis="t", entry_trigger="e", entry_price=100.0,
+        order_type="Buy Stop",
         stop_loss=99.0, profit_target_1=102.0, profit_target_2=104.0,
         risk_reward=2.0, position_size_pct=0.05,
         indicators_to_watch=("VWAP",), invalidation="inv", confidence="medium",
