@@ -6,12 +6,11 @@ Enhanced with symbol-based pagination
 from dash import Input, Output, State, ctx, html, ALL, dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-import plotly.graph_objects as go
 from datetime import datetime
 import time
 
 from webui.utils.state import app_state
-from webui.utils.charts import create_chart, create_welcome_chart
+from webui.utils.charts_lwc import build_lwc_payload, empty_lwc_payload
 from webui.config.constants import SYMBOL_CLICK_DEBOUNCE_SECONDS
 
 
@@ -133,7 +132,7 @@ def register_chart_callbacks(app):
         return dash.no_update, dash.no_update
 
     @app.callback(
-        [Output("chart-container", "figure"),
+        [Output("chart-container-payload", "data"),
          Output("current-symbol-display", "children"),
          Output("chart-store", "data")],
         [Input("period-1d", "n_clicks"),
@@ -145,27 +144,20 @@ def register_chart_callbacks(app):
         [State("chart-store", "data")]
     )
     def update_chart(n_1d, n_1w, n_1mo, n_1y, active_page, manual_refresh, chart_store_data):
-        """Update the chart based on period selection or ticker change"""
-        # print(f"[CHART] Called with active_page={active_page}, symbol_states={list(app_state.symbol_states.keys()) if app_state.symbol_states else []}")
-        
-        if not app_state.symbol_states or not active_page:
-            # print(f"[CHART] No symbol states or no active page, returning welcome chart")
-            return create_welcome_chart(), "", chart_store_data
+        """Build LWC payload and push to chart-container-payload store."""
+        empty = empty_lwc_payload()
 
-        # Safeguard against accessing invalid page index (e.g., after page refresh)
+        if not app_state.symbol_states or not active_page:
+            return empty, "", chart_store_data
+
         symbols_list = list(app_state.symbol_states.keys())
         if active_page > len(symbols_list):
-            # print(f"[CHART] Page index {active_page} out of range for {len(symbols_list)} symbols")
-            return create_welcome_chart(), "Page index out of range", chart_store_data
+            return empty, "Page index out of range", chart_store_data
 
         symbol = symbols_list[active_page - 1]
-        # print(f"[CHART] Selected symbol: {symbol} (page {active_page})")
 
-        # Determine which input triggered the callback
         triggered_prop = ctx.triggered[0]["prop_id"] if ctx.triggered else None
-        # print(f"[CHART] Triggered by: {triggered_prop}")
 
-        # Default period handling
         period_map = {
             "period-1d.n_clicks": "1d",
             "period-1w.n_clicks": "1w",
@@ -173,34 +165,39 @@ def register_chart_callbacks(app):
             "period-1y.n_clicks": "1y"
         }
 
-        # Determine selected period
-        selected_period = None
         if triggered_prop in period_map:
             selected_period = period_map[triggered_prop]
         elif chart_store_data and "selected_period" in chart_store_data:
             selected_period = chart_store_data["selected_period"]
         else:
-            selected_period = "1y"  # Default to 1Y to match button default
+            selected_period = "1y"
 
-        # print(f"[CHART] Using period: {selected_period}")
-
-        # Create chart
         try:
-            chart_figure = create_chart(symbol, selected_period)
+            payload = build_lwc_payload(symbol, selected_period)
             symbol_display = f"📈 {symbol.upper()}"
-            
-            # Update store data
+
             updated_store_data = chart_store_data or {}
             updated_store_data["selected_period"] = selected_period
             updated_store_data["last_symbol"] = symbol
             updated_store_data["last_updated"] = datetime.now().isoformat()
-            
-            # print(f"[CHART] Successfully created chart for {symbol} with period {selected_period}")
-            return chart_figure, symbol_display, updated_store_data
-            
-        except Exception as e:
-            # print(f"[CHART] Error creating chart for {symbol}: {e}")
-            return create_welcome_chart(), f"❌ Error loading {symbol.upper()}", chart_store_data
+
+            return payload, symbol_display, updated_store_data
+
+        except Exception:
+            return empty, f"❌ Error loading {symbol.upper()}", chart_store_data
+
+    app.clientside_callback(
+        """
+        function(payload) {
+            if (payload && window.lwcRender) {
+                window.lwcRender('chart-container', payload);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("chart-container", "data-lwc-rendered"),
+        Input("chart-container-payload", "data"),
+    )
 
     @app.callback(
         Output("chart-last-updated", "children"),

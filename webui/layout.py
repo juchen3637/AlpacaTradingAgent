@@ -18,6 +18,8 @@ from webui.components.debug_panel import create_debug_panel
 from webui.components.portfolio_page import create_portfolio_page
 from webui.components.journal_page import create_journal_page
 from webui.components.scanner_page import create_scanner_page
+from webui.components.longterm_page import create_longterm_page
+from webui.components.plays_page import create_plays_page
 from webui.config.constants import COLORS, REFRESH_INTERVALS
 
 
@@ -121,9 +123,29 @@ def _create_journal_page():
 
 
 def _create_scanner_page():
-    """Trading: ticker scanner + AI strategy playbook."""
+    """Trading: subtabs for Day Trading and Long Term."""
     return html.Div(id="page-scanner", children=[
-        create_scanner_page(),
+        dbc.Tabs(
+            [
+                dbc.Tab(create_scanner_page(),
+                        label="Day Trading",
+                        tab_id="trading-day",
+                        tabClassName="trading-subtab"),
+                dbc.Tab(create_longterm_page(),
+                        label="Long Term",
+                        tab_id="trading-longterm",
+                        tabClassName="trading-subtab"),
+            ],
+            id="trading-subtabs",
+            active_tab="trading-day",
+        ),
+    ], style={"display": "none"})
+
+
+def _create_plays_page():
+    """Plays: multi-card view of saved plays with LLM viability re-analysis."""
+    return html.Div(id="page-plays", children=[
+        create_plays_page(),
     ], style={"display": "none"})
 
 
@@ -174,6 +196,7 @@ def create_main_layout():
             _create_portfolio_page(),
             _create_journal_page(),
             _create_scanner_page(),
+            _create_plays_page(),
             _create_config_page(),
         ], className="main-content-with-sidebar p-3 p-md-4",
            style={"backgroundColor": COLORS["background"], "minHeight": "100vh"}),

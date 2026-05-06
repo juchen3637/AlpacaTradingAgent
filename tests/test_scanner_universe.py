@@ -30,24 +30,34 @@ def test_crypto_universe_has_btc_eth():
 
 
 @pytest.mark.unit
-def test_crypto_universe_dedups_extras():
+def test_non_empty_watchlist_overrides_crypto_universe():
+    """Filling the watchlist scans only those symbols, even with crypto universe selected."""
     filters = ScanFilters(universe_kind="crypto", watchlist=("BTC/USD", "LUNA/USD"))
-    symbols = build(filters)
-    assert symbols.count("BTC/USD") == 1
-    assert "LUNA/USD" in symbols
+    assert build(filters) == ["BTC/USD", "LUNA/USD"]
 
 
 @pytest.mark.unit
-def test_most_active_injects_watchlist_at_end():
+def test_non_empty_watchlist_overrides_most_active():
+    """Filling the watchlist short-circuits the most-actives fetch."""
     filters = ScanFilters(universe_kind="most_active", watchlist=("TSLA", "NVDA"))
-    # Fake fetcher returns a fixed list; TSLA is already in it (should dedup),
-    # NVDA is not (should be appended).
-    symbols = build(filters, most_actives_fetcher=lambda n: ["AAPL", "TSLA", "AMD"])
-    assert symbols == ["AAPL", "TSLA", "AMD", "NVDA"]
+
+    def _should_not_run(_n):
+        raise AssertionError("most-actives fetcher should not be called when watchlist is non-empty")
+
+    assert build(filters, most_actives_fetcher=_should_not_run) == ["TSLA", "NVDA"]
 
 
 @pytest.mark.unit
-def test_most_active_empty_fetch_still_returns_watchlist():
-    filters = ScanFilters(universe_kind="most_active", watchlist=("NVDA",))
-    symbols = build(filters, most_actives_fetcher=lambda n: [])
-    assert symbols == ["NVDA"]
+def test_empty_watchlist_falls_back_to_most_active():
+    """Empty watchlist → use the most-actives universe."""
+    filters = ScanFilters(universe_kind="most_active", watchlist=())
+    symbols = build(filters, most_actives_fetcher=lambda n: ["AAPL", "TSLA", "AMD"])
+    assert symbols == ["AAPL", "TSLA", "AMD"]
+
+
+@pytest.mark.unit
+def test_empty_watchlist_falls_back_to_crypto():
+    filters = ScanFilters(universe_kind="crypto", watchlist=())
+    symbols = build(filters)
+    assert "BTC/USD" in symbols
+    assert "ETH/USD" in symbols

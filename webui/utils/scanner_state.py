@@ -13,7 +13,7 @@ from typing import Optional
 
 from tradingagents.scanner.models import Playbook, ScanResult
 
-_PLAYBOOK_TTL_SECONDS = 300  # 5 minutes
+_PLAYBOOK_TTL_SECONDS = 12 * 3600  # 12 hours — covers a full trading session
 _PLAYBOOK_MAX_ENTRIES = 64
 
 
@@ -43,9 +43,11 @@ class _ScannerState:
 
     @staticmethod
     def _bucket_key(symbol: str, strategy_id: str, model: str = "") -> tuple:
-        # 5-minute bucket so price moves re-generate the playbook.
-        # Model in key so switching LLMs regenerates instead of returning a stale cached answer.
-        return (symbol.upper(), strategy_id, model or "", int(time.time() // 300))
+        # Keyed only by (symbol, strategy_id, model) — freshness is enforced by
+        # the TTL on `set_playbook` entries, not by a wall-clock bucket. Avoids
+        # surprise cache misses at every 5-minute boundary that would hide the
+        # chart while the user is monitoring a live position.
+        return (symbol.upper(), strategy_id, model or "")
 
     def get_playbook(
         self, symbol: str, strategy_id: str, model: str = ""

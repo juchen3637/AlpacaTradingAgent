@@ -13,7 +13,7 @@ from tradingagents.analytics.trade_journal import (
     build_decision_from_state,
 )
 from webui.utils.state import app_state
-from webui.utils.charts import create_chart
+from webui.utils.charts_lwc import build_lwc_payload as create_chart
 from webui.watchdog import set_analysis_active, set_analysis_inactive, touch_analysis_flag
 
 

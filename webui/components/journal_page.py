@@ -78,7 +78,7 @@ def create_journal_page():
                             placeholder="All tickers",
                             style={"color": "#0F172A"},
                         ),
-                    ], xs=12, lg=4),
+                    ], xs=12, lg=3),
                     dbc.Col([
                         html.Label("Signal", style={"fontSize": "11px",
                                                     "color": "#94A3B8", "fontWeight": "600",
@@ -94,6 +94,24 @@ def create_journal_page():
                                 {"label": "LONG", "value": "LONG"},
                                 {"label": "NEUTRAL", "value": "NEUTRAL"},
                                 {"label": "SHORT", "value": "SHORT"},
+                            ],
+                            value="ALL",
+                            clearable=False,
+                            style={"color": "#0F172A"},
+                        ),
+                    ], xs=12, lg=2),
+                    dbc.Col([
+                        html.Label("Source", style={"fontSize": "11px",
+                                                    "color": "#94A3B8", "fontWeight": "600",
+                                                    "textTransform": "uppercase",
+                                                    "letterSpacing": "0.5px"}),
+                        dcc.Dropdown(
+                            id="journal-source-filter",
+                            options=[
+                                {"label": "All sources", "value": "ALL"},
+                                {"label": "Scanner (paper trades)", "value": "scanner"},
+                                {"label": "Agent (LLM decisions)", "value": "agent"},
+                                {"label": "Backfill (Alpaca history)", "value": "backfill"},
                             ],
                             value="ALL",
                             clearable=False,
@@ -118,7 +136,7 @@ def create_journal_page():
                             clearable=False,
                             style={"color": "#0F172A"},
                         ),
-                    ], xs=12, lg=3),
+                    ], xs=12, lg=2),
                     dbc.Col([
                         html.Label(" ", style={"fontSize": "11px",
                                                "display": "block"}),

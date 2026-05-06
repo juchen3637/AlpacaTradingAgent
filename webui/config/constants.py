@@ -55,5 +55,6 @@ SIDEBAR_NAV = [
     {"icon": "pie_chart", "label": "Portfolio", "id": "nav-portfolio"},
     {"icon": "receipt_long", "label": "Journal", "id": "nav-journal"},
     {"icon": "trending_up", "label": "Trading", "id": "nav-scanner"},
+    {"icon": "bookmarks", "label": "Plays", "id": "nav-plays"},
     {"icon": "settings", "label": "Config", "id": "nav-config"},
 ]

@@ -9,13 +9,11 @@ template in `constants.STRATEGY_RULES`.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from tradingagents.default_config import DEFAULT_CONFIG
-
+from ._llm_factory import get_llm as _get_llm
 from .constants import STRATEGY_RULES
 from .models import Playbook, ScanResult, TickerSnapshot
 
@@ -25,8 +23,34 @@ logger = logging.getLogger(__name__)
 class _PlaybookSchema(BaseModel):
     """Pydantic schema the LLM must populate."""
 
-    thesis: str = Field(description="One-paragraph rationale, ≤60 words.")
-    entry_trigger: str = Field(description="Concrete price/condition for entry.")
+    thesis: str = Field(
+        description=(
+            "One-paragraph rationale, ≤60 words. Plain English; put any "
+            "trader jargon in parentheses after the everyday phrase."
+        )
+    )
+    entry_trigger: str = Field(
+        description=(
+            "Plain-English entry condition. After any technical term, include "
+            "the trader jargon in parentheses. Example: 'When the price moves "
+            "up through $1.70 (breakout above $1.70).'"
+        )
+    )
+    entry_price: float = Field(
+        description=(
+            "Numeric entry price (absolute dollars). The single best trigger "
+            "or limit price to enter — used directly by chart tools."
+        )
+    )
+    order_type: str = Field(
+        description=(
+            "EXACTLY one of: 'Buy Stop', 'Buy Limit', 'Buy Stop-Limit', "
+            "'Buy Market'. Pick based on the entry condition: "
+            "breakouts above current price → 'Buy Stop'; pullbacks down to a "
+            "level → 'Buy Limit'; breakouts where slippage is a concern → "
+            "'Buy Stop-Limit'; immediate fill on signal → 'Buy Market'."
+        )
+    )
     stop_loss: float = Field(description="Stop loss price, absolute dollars.")
     profit_target_1: float = Field(description="First profit target, absolute dollars.")
     profit_target_2: float = Field(description="Second profit target, absolute dollars.")
@@ -38,13 +62,56 @@ class _PlaybookSchema(BaseModel):
     indicators_to_watch: list[str] = Field(description="Key indicators / levels.")
     invalidation: str = Field(description="What makes this setup wrong.")
     confidence: str = Field(description="low | medium | high")
+    qualification_reason: str = Field(
+        description=(
+            "1-2 sentences explaining why THIS ticker matches THIS strategy, "
+            "citing specific numbers from the snapshot (RVOL, float, price vs "
+            "VWAP, catalyst, etc.). Plain English; trader jargon in parentheses."
+        )
+    )
+    confidence_reason: str = Field(
+        description=(
+            "1-2 sentences explaining what specifically pushed the confidence "
+            "to low/medium/high. Cite the supporting (or missing) signals. "
+            "Plain English; trader jargon in parentheses."
+        )
+    )
 
 
 _SYSTEM_PROMPT = (
-    "You are a day-trading playbook generator. Given a strategy template and "
-    "current ticker data, output STRICT JSON matching the provided schema. "
-    "No commentary. No hedging. Use the provided price levels — do not invent. "
-    "Stop and targets must be absolute dollar prices consistent with the entry."
+    "You are a day-trading playbook generator for a beginner trader. Given a "
+    "strategy template and current ticker data, output STRICT JSON matching "
+    "the provided schema. No commentary. No hedging. Use the provided price "
+    "levels — do not invent.\n\n"
+    "PLAIN-ENGLISH RULE — critical: write `thesis`, `entry_trigger`, and "
+    "`invalidation` so a beginner can follow them. After any technical term, "
+    "put the trader jargon in parentheses. Examples:\n"
+    "  ✓ 'When the price moves up through $1.70 (breakout above $1.70).'\n"
+    "  ✓ 'Price climbs back above the average price line (VWAP reclaim).'\n"
+    "  ✓ 'Today's trading volume is 5× the usual (RVOL 5).'\n"
+    "  ✗ 'Break above $1.70.' (too jargony, no plain explanation)\n\n"
+    "ORDER TYPE RULE: `order_type` must match the entry intent exactly. "
+    "Breakout above current price → 'Buy Stop'. Pullback down to a level → "
+    "'Buy Limit'. Use 'Buy Stop-Limit' only if you want to cap slippage. "
+    "Use 'Buy Market' only when the trigger is right now.\n\n"
+    "PRICE RULES: Stop and targets must be absolute dollar prices consistent "
+    "with the entry. `entry_price` is the single concrete trigger/limit "
+    "number used by chart tools.\n\n"
+    "QUALIFICATION RULE: `qualification_reason` must cite the specific numbers "
+    "from the snapshot that make this ticker fit THIS strategy. Examples:\n"
+    "  ✓ 'Float is 8M (under the 20M cap for low-float setups), today's volume "
+    "is 6× normal (RVOL 6.0), and price reclaimed the average price line at "
+    "$1.85 (VWAP reclaim).'\n"
+    "  ✓ 'Price is within 2% of its 52-week high with heavy volume (RVOL 4.5) "
+    "and a fresh FDA catalyst — exactly what an ATH breakout needs.'\n"
+    "  ✗ 'This looks like a good setup.' (too generic, no numbers)\n\n"
+    "CONFIDENCE RULE: `confidence_reason` must explain WHICH signals support or "
+    "weaken the chosen level. Examples:\n"
+    "  ✓ HIGH: 'All three primary signals aligned — catalyst (FDA), heavy "
+    "volume (RVOL 8), and price holding above the average price line (VWAP).'\n"
+    "  ✓ LOW: 'Volume is light (RVOL 1.2) and there's no fresh catalyst — the "
+    "breakout could fail without volume confirmation.'\n"
+    "  ✗ 'This is a high-confidence setup.' (no reasoning)"
 )
 
 
@@ -82,6 +149,7 @@ def _fallback_playbook(scan_result: ScanResult) -> Playbook:
     pt1 = round(price * 1.02, 2)
     pt2 = round(price * 1.04, 2)
     rr = round((pt1 - price) / max(price - stop, 0.01), 2)
+    rvol_str = f"{snap.rvol:.1f}" if snap.rvol is not None else "n/a"
     return Playbook(
         symbol=snap.symbol,
         strategy_id=scan_result.strategy_id,
@@ -89,7 +157,12 @@ def _fallback_playbook(scan_result: ScanResult) -> Playbook:
             f"Rule-based fallback: {scan_result.strategy_name} setup on {snap.symbol} "
             f"at ${price:,.2f}."
         ),
-        entry_trigger=f"Break above ${price:,.2f} on confirming volume.",
+        entry_trigger=(
+            f"Buy when the price moves up through ${price:,.2f} on rising "
+            "trading volume (breakout above the trigger price with confirming volume)."
+        ),
+        entry_price=round(price, 2),
+        order_type="Buy Stop",
         stop_loss=stop,
         profit_target_1=pt1,
         profit_target_2=pt2,
@@ -98,29 +171,16 @@ def _fallback_playbook(scan_result: ScanResult) -> Playbook:
         indicators_to_watch=("VWAP", "RVOL", "Price vs. PDH"),
         invalidation=f"Close below ${stop:,.2f} invalidates the setup.",
         confidence="low",
+        qualification_reason=(
+            f"Matched {scan_result.strategy_name} on {snap.symbol} at ${price:,.2f} "
+            f"with RVOL {rvol_str} (rule-based fallback — full reasoning unavailable "
+            "because the LLM call failed)."
+        ),
+        confidence_reason=(
+            "Confidence is low because this is a rule-based fallback playbook — "
+            "the LLM was unavailable, so we can't verify which signals are aligned."
+        ),
     )
-
-
-def _get_llm(provider: Optional[str] = None, model: Optional[str] = None):
-    """Construct the quick-think LLM. `provider` and `model` override DEFAULT_CONFIG."""
-    provider = (provider or DEFAULT_CONFIG.get("llm_provider", "openai")).lower()
-
-    if provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or DEFAULT_CONFIG.get("anthropic_api_key")
-        model = model or DEFAULT_CONFIG.get("anthropic_quick_think_llm", "claude-sonnet-4-6")
-        return ChatAnthropic(model=model, api_key=api_key, temperature=0.2)
-
-    from langchain_openai import ChatOpenAI
-
-    api_key = os.environ.get("OPENAI_API_KEY") or DEFAULT_CONFIG.get("openai_api_key")
-    model = model or DEFAULT_CONFIG.get("quick_think_llm", "gpt-4o-mini")
-    kwargs = {}
-    no_temp = ["o3", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]
-    if not any(prefix in model for prefix in no_temp):
-        kwargs["temperature"] = 0.2
-    return ChatOpenAI(model=model, openai_api_key=api_key, **kwargs)
 
 
 def generate_playbook(
@@ -154,6 +214,8 @@ def generate_playbook(
             strategy_id=strategy_id,
             thesis=result.thesis,
             entry_trigger=result.entry_trigger,
+            entry_price=float(result.entry_price),
+            order_type=result.order_type,
             stop_loss=float(result.stop_loss),
             profit_target_1=float(result.profit_target_1),
             profit_target_2=float(result.profit_target_2),
@@ -162,6 +224,8 @@ def generate_playbook(
             indicators_to_watch=tuple(result.indicators_to_watch),
             invalidation=result.invalidation,
             confidence=result.confidence.lower(),
+            qualification_reason=result.qualification_reason,
+            confidence_reason=result.confidence_reason,
         )
     except Exception as exc:
         logger.warning("Playbook LLM failed (%s) — returning fallback", exc)

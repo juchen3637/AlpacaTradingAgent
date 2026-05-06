@@ -20,13 +20,14 @@ _PAGE_MAP = {
     "nav-portfolio": "portfolio",
     "nav-journal": "journal",
     "nav-scanner": "scanner",
+    "nav-plays": "plays",
     "nav-config": "config",
 }
 
 _NAV_IDS = list(_PAGE_MAP.keys())
 _PAGE_IDS = [
     "page-dashboard", "page-analytics", "page-portfolio",
-    "page-journal", "page-scanner", "page-config",
+    "page-journal", "page-scanner", "page-plays", "page-config",
 ]
 
 

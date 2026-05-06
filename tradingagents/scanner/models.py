@@ -98,6 +98,8 @@ class Playbook:
     strategy_id: str
     thesis: str
     entry_trigger: str
+    entry_price: float
+    order_type: str  # "Buy Stop" | "Buy Limit" | "Buy Stop-Limit" | "Buy Market"
     stop_loss: float
     profit_target_1: float
     profit_target_2: float
@@ -106,3 +108,5 @@ class Playbook:
     indicators_to_watch: tuple[str, ...]
     invalidation: str
     confidence: str  # "low" | "medium" | "high"
+    qualification_reason: str = ""
+    confidence_reason: str = ""
