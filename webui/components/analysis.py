@@ -7,6 +7,9 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.agents.utils.agent_trading_modes import extract_recommendation
+from tradingagents.agents.utils.exit_gate import evaluate_exit_gate
+from tradingagents.agents.utils.position_size_extractor import extract_conviction
+from tradingagents.agents.utils.thesis_store import add_entry_thesis, clear_entry_thesis
 from tradingagents.analytics import get_journal
 from tradingagents.analytics.trade_journal import (
     TradeRecord,
@@ -226,6 +229,52 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
         print(f"[TRADE]   Take Profit: {[f'${t:.2f}' for t in final_take_profit]}" if final_take_profit else f"[TRADE]   Take Profit: DISABLED (toggle: {use_take_profit})")
         print(f"[TRADE] ═══════════════════════════════════════════════════")
 
+        # Bracket-first exit gate: when we already hold a position and the new signal
+        # would close it, decide whether to honour the close or respect the existing
+        # bracket (TP/SL) and let it work. Prevents the flip-flop liquidations where
+        # the AI re-derives SELL within an hour of entry and kills its own bracket.
+        if current_position in ("LONG", "SHORT"):
+            from tradingagents.default_config import DEFAULT_CONFIG
+            # Prefer UI-driven overrides set by on_control_button_click; fall back
+            # to DEFAULT_CONFIG so manual / single-run flows still get sane defaults.
+            cfg = {**DEFAULT_CONFIG, **getattr(app_state, "exit_gate_config", {})}
+            snapshot = AlpacaUtils.get_position_snapshot(ticker)
+            opened_at = AlpacaUtils.get_position_opened_at(ticker)
+            final_decision_text = state["current_reports"].get("final_trade_decision") or ""
+            conviction = extract_conviction(final_decision_text)
+            # thesis_break is the hard-dissent override path for material news flagged
+            # by an upstream producer. No producer is wired in yet, so we hold this at
+            # False — the gate falls back to conviction + adverse-move checks. When a
+            # news-flagging analyst lands, set this from final_state.get("thesis_break").
+            thesis_break = False
+
+            decision = evaluate_exit_gate(
+                symbol=ticker,
+                current_position=current_position,
+                signal=recommended_action,
+                avg_entry=snapshot.get("avg_entry", 0.0),
+                current_price=snapshot.get("current_price", 0.0),
+                position_opened_at=opened_at,
+                conviction=conviction,
+                thesis_break=thesis_break,
+                config=cfg,
+            )
+            if decision.action == "respect_bracket":
+                print(f"[EXIT_GATE] Respecting bracket for {ticker}: {decision.reason}")
+                state["trading_results"] = {
+                    "success": True,
+                    "symbol": ticker,
+                    "current_position": current_position,
+                    "signal": recommended_action,
+                    "actions": [{
+                        "action": "respected_bracket",
+                        "message": f"Exit gate held position: {decision.reason}",
+                    }],
+                }
+                return
+            if decision.action == "close":
+                print(f"[EXIT_GATE] Allowing close for {ticker}: {decision.reason}")
+
         # Execute the trading action with stop/targets (respect toggles)
         result = AlpacaUtils.execute_trading_action(
             symbol=ticker,
@@ -263,12 +312,32 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             print(f"[TRADE] Successfully executed trading actions for {ticker}")
             for success in successful_actions:
                 print(f"[TRADE] {success}")
-            
+
             # Store trading results in state for UI display
             state["trading_results"] = result
-            
+
             # Signal that a trade occurred to trigger Alpaca data refresh
             app_state.signal_trade_occurred()
+
+            # ── Phase 4: thesis store sync ──
+            # On entry, persist a compact thesis so future re-analyses can recall
+            # *why* this position was opened. On close, clear the stored thesis
+            # so the next entry doesn't surface a stale rationale.
+            try:
+                actions_taken = {a.get("action", "") for a in result.get("actions", [])}
+                opened_actions = {"open_long", "open_long_bracket", "open_short", "open_short_bracket"}
+                closed_actions = {"close_long", "close_short", "sell"}
+                if actions_taken & opened_actions:
+                    final_decision_text = state["current_reports"].get("final_trade_decision") or ""
+                    fill_price = (approved_prices.get("entry_price") if approved_prices else None) \
+                                 or AlpacaUtils.get_position_snapshot(ticker).get("avg_entry") or 0.0
+                    add_entry_thesis(ticker, fill_price, final_decision_text)
+                    print(f"[THESIS_STORE] Recorded entry thesis for {ticker} @ ${fill_price:.2f}")
+                if actions_taken & closed_actions:
+                    clear_entry_thesis(ticker)
+                    print(f"[THESIS_STORE] Cleared entry thesis for {ticker} (position closed)")
+            except Exception as e:
+                print(f"[THESIS_STORE] Failed to sync thesis store for {ticker}: {e}")
         else:
             print(f"[TRADE] Trading execution failed for {ticker}")
             for success in successful_actions:
