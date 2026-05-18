@@ -410,7 +410,18 @@ def _chart_panel():
             ),
             dcc.Store(id="scanner-chart-payload"),
             html.Div(
-                "Data via Alpaca · free-tier minute bars may be ~15 minutes delayed · auto-refreshes every 3s",
+                [
+                    "Data via Alpaca IEX feed (free tier) · ~15 min SIP delay, and minutes "
+                    "with no IEX trade are simply absent — set ",
+                    html.Code("ALPACA_DATA_FEED=sip",
+                              style={"backgroundColor": "rgba(148, 163, 184, 0.12)",
+                                     "padding": "1px 5px", "borderRadius": "3px"}),
+                    " in ",
+                    html.Code(".env",
+                              style={"backgroundColor": "rgba(148, 163, 184, 0.12)",
+                                     "padding": "1px 5px", "borderRadius": "3px"}),
+                    " if you have a paid plan · auto-refreshes every 3s",
+                ],
                 style={"fontSize": "11px", "color": "#64748B",
                        "fontStyle": "italic", "marginTop": "4px"},
             ),
