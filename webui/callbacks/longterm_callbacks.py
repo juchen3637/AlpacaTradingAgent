@@ -1446,3 +1446,66 @@ def register_longterm_callbacks(app):
         if not narrative:
             return "_Deep-dive unavailable for this catalyst._"
         return narrative
+
+    # ── Export Tickers ──────────────────────────────────────────────────
+    # Enable the button when there are ranked candidates; clicking opens a
+    # modal with a comma-separated list ready to paste into the Analysis
+    # section's watchlist.
+
+    @app.callback(
+        Output("lt-export-btn", "disabled"),
+        Input("lt-results-store", "data"),
+    )
+    def toggle_lt_export_button(rows):
+        return not bool(rows)
+
+    @app.callback(
+        [
+            Output("lt-export-modal", "is_open"),
+            Output("lt-export-textarea", "value"),
+            Output("lt-export-count", "children"),
+        ],
+        [
+            Input("lt-export-btn", "n_clicks"),
+            Input("lt-export-close-btn", "n_clicks"),
+        ],
+        State("lt-results-store", "data"),
+        prevent_initial_call=True,
+    )
+    def open_lt_export_modal(open_clicks, close_clicks, rows):
+        triggered = ctx.triggered_id
+        if triggered == "lt-export-close-btn":
+            return False, no_update, no_update
+        if not rows:
+            return False, "", ""
+        symbols = [str(r.get("symbol", "")).strip().upper()
+                   for r in rows if r.get("symbol")]
+        symbols = [s for s in symbols if s]
+        text = ", ".join(symbols)
+        count = f"{len(symbols)} ticker{'s' if len(symbols) != 1 else ''}"
+        return True, text, count
+
+    # Clientside copy-to-clipboard. Falls back gracefully when the Clipboard
+    # API is unavailable (older browsers, non-secure contexts) by select+execCommand.
+    app.clientside_callback(
+        """
+        function(n_clicks, value) {
+            if (!n_clicks || !value) {
+                return window.dash_clientside.no_update;
+            }
+            try {
+                if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(value);
+                } else {
+                    const ta = document.getElementById('lt-export-textarea');
+                    if (ta) { ta.select(); document.execCommand('copy'); }
+                }
+            } catch (e) { /* swallow */ }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("lt-export-copy-btn", "data-copied"),
+        Input("lt-export-copy-btn", "n_clicks"),
+        State("lt-export-textarea", "value"),
+        prevent_initial_call=True,
+    )
