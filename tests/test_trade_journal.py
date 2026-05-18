@@ -152,7 +152,48 @@ def test_count_decisions(journal):
     journal.record_decision(_decision(ticker="NVDA"))
     journal.record_decision(_decision(ticker="AMD"))
     assert journal.count_decisions() == 2
-    assert journal.count_decisions(ticker="NVDA") == 1
+
+
+def test_clear_all_removes_decisions_trades_and_outcomes(journal):
+    did = journal.record_decision(_decision(ticker="NVDA"))
+    journal.record_trade(TradeRecord(
+        decision_id=did, ticker="NVDA", side="buy", qty=10.0,
+        filled_price=100.0, order_type="market",
+        alpaca_order_id="abc", status="filled",
+    ))
+    journal.record_outcome(
+        decision_id=did, ticker="NVDA",
+        entry_timestamp="2026-04-21T10:00:00", entry_price=100.0,
+        exit_timestamp="2026-04-22T10:00:00", exit_price=110.0,
+        qty=10.0, pnl_dollars=100.0, pnl_percent=10.0,
+        hold_duration_hours=24.0, exit_reason="take_profit",
+    )
+
+    deleted = journal.clear_all()
+    assert deleted == {"decisions": 1, "trades": 1, "outcomes": 1}
+
+    assert journal.count_decisions() == 0
+    assert journal.get_decisions() == []
+    assert journal.get_all_tickers() == []
+    assert journal.get_trades_for_decision(did) == []
+    assert journal.get_outcomes_for_decision(did) == []
+
+
+def test_clear_all_on_empty_journal_is_noop(journal):
+    deleted = journal.clear_all()
+    assert deleted == {"decisions": 0, "trades": 0, "outcomes": 0}
+    assert journal.count_decisions() == 0
+
+
+def test_clear_all_preserves_schema_and_allows_writes(journal):
+    journal.record_decision(_decision(ticker="NVDA"))
+    journal.clear_all()
+
+    new_did = journal.record_decision(_decision(ticker="AAPL"))
+    assert new_did > 0
+    assert journal.count_decisions() == 1
+    assert journal.get_all_tickers() == ["AAPL"]
+    assert journal.count_decisions(ticker="NVDA") == 0
 
 
 def test_decisions_with_outcomes_joins_children(journal):

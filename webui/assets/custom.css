@@ -464,61 +464,108 @@ h1, h2, h3, h4, h5, h6, .font-headline {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2394A3B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
 }
 
-/* dcc.Dropdown (react-select) — dark theme globally */
-.Select-control,
-.VirtualizedSelectFocusedOption,
-.Select-menu-outer,
-.Select-menu,
-.Select-option,
-.VirtualizedSelectOption,
-.Select-input > input,
-.Select-value-label,
-.Select-placeholder {
+/* dcc.Dropdown (react-select) — dark theme globally
+   Body-prefixed selectors outrank DARKLY's Bootstrap rules. Covers both the
+   legacy single-dash class names (.Select-control, .Select-menu-outer, …)
+   and any modern BEM-style variants (.Select__control, .Select__menu, …) so
+   styling holds across Dash + react-select versions. */
+body .dash-dropdown .Select-control,
+body .dash-dropdown .Select-menu-outer,
+body .dash-dropdown .Select-menu,
+body .dash-dropdown .Select-option,
+body .dash-dropdown .VirtualizedSelectOption,
+body .dash-dropdown .VirtualizedSelectFocusedOption,
+body .dash-dropdown .Select-input,
+body .dash-dropdown .Select-input > input,
+body .Select-control,
+body .Select-menu-outer,
+body .Select-menu,
+body .Select-option,
+body .VirtualizedSelectOption,
+body .VirtualizedSelectFocusedOption,
+body .Select__control,
+body .Select__menu,
+body .Select__menu-list,
+body .Select__option,
+body .Select__single-value,
+body .Select__input-container {
     background-color: #0B1120 !important;
     color: #F1F5F9 !important;
 }
 
-.Select-control {
+/* Ensure dropdown menu portals (rendered outside .dash-dropdown subtree) also pick up dark theme */
+body div[class*="Select-menu"],
+body div[class*="Select__menu"] {
+    background-color: #0B1120 !important;
+    color: #F1F5F9 !important;
+}
+
+body .Select-control,
+body .Select__control {
     border-color: #334155 !important;
 }
 
-.Select-menu-outer {
+body .Select-menu-outer,
+body .Select__menu {
     border-color: #334155 !important;
     z-index: 9999 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
-.Select-option.is-focused,
-.VirtualizedSelectFocusedOption {
+body .Select-option.is-focused,
+body .VirtualizedSelectFocusedOption,
+body .Select__option--is-focused {
     background-color: rgba(59, 130, 246, 0.2) !important;
     color: #F1F5F9 !important;
 }
 
-.Select-option.is-selected {
+body .Select-option.is-selected,
+body .Select__option--is-selected {
     background-color: rgba(59, 130, 246, 0.35) !important;
     color: #F1F5F9 !important;
 }
 
-.Select-value-label,
-.Select--single > .Select-control .Select-value .Select-value-label {
+body .Select-value-label,
+body .Select--single > .Select-control .Select-value .Select-value-label,
+body .Select__single-value {
     color: #F1F5F9 !important;
 }
 
-.Select-placeholder,
-.Select--single > .Select-control .Select-value {
+body .Select-placeholder,
+body .Select--single > .Select-control .Select-value,
+body .Select__placeholder {
     color: #94A3B8 !important;
 }
 
-.Select-arrow {
+body .Select-arrow,
+body .Select__indicator,
+body .Select__dropdown-indicator {
+    color: #94A3B8 !important;
     border-color: #94A3B8 transparent transparent !important;
 }
 
-.is-open > .Select-control .Select-arrow {
+body .is-open > .Select-control .Select-arrow {
     border-color: transparent transparent #94A3B8 !important;
 }
 
-.Select.is-focused:not(.is-open) > .Select-control {
+body .Select.is-focused:not(.is-open) > .Select-control,
+body .Select__control--is-focused {
     border-color: #3B82F6 !important;
     box-shadow: 0 0 0 1px #3B82F6 !important;
+}
+
+/* Multi-select chips */
+body .Select-value,
+body .Select__multi-value {
+    background-color: rgba(59, 130, 246, 0.2) !important;
+    border: 1px solid rgba(59, 130, 246, 0.4) !important;
+}
+body .Select__multi-value__label {
+    color: #F1F5F9 !important;
+}
+body .Select__multi-value__remove:hover {
+    background-color: rgba(239, 68, 68, 0.3) !important;
+    color: #F1F5F9 !important;
 }
 
 /* Radio items inline */
