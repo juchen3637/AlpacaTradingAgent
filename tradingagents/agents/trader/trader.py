@@ -4,6 +4,7 @@ import json
 from ..utils.agent_trading_modes import get_trading_mode_context, get_agent_specific_context, extract_recommendation, format_final_decision
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.agents.utils.agent_utils import log_llm_start, log_llm_end
+from tradingagents.agents.utils.thesis_store import get_latest_entry_thesis
 
 # Import prompt capture utility
 try:
@@ -98,9 +99,47 @@ def create_trader(llm, memory, config=None):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
+        # Build a "REVISE EXISTING POSITION" framing block when we already hold
+        # the asset. The default for held positions is HOLD; the AI must clear a
+        # high bar to recommend EXIT. This pairs with the Phase 1 exit gate which
+        # consumes the explicit conviction score below.
+        revise_block = ""
+        if current_position != "NEUTRAL":
+            latest_thesis = get_latest_entry_thesis(company_name) or {}
+            thesis_text = latest_thesis.get("thesis") or "(no recorded entry thesis)"
+            entry_price_str = (
+                f"${latest_thesis['price']:.2f}" if latest_thesis.get("price") else "(unknown entry price)"
+            )
+            revise_block = f"""
+═══════════════════════════════════════════════════════════════
+**REVISE EXISTING POSITION — DO NOT TREAT AS A FRESH ENTRY**
+═══════════════════════════════════════════════════════════════
+You already hold an open {current_position} position in {company_name}.
+You are NOT initiating this position; you are reviewing it.
+
+**Original entry thesis** (recorded at entry, price {entry_price_str}):
+{thesis_text}
+
+**Your default recommendation is HOLD.** Bracket orders (stop-loss + take-profit)
+are already protecting this position. Recommend EXIT only if BOTH:
+  (a) The original entry thesis is materially broken (cite the specific
+      change — earnings miss, macro regime shift, broken technical level), AND
+  (b) Your conviction in the EXIT decision is high.
+
+A modest shift in sentiment, a small adverse move, or generic risk language
+is NOT sufficient to override the active bracket. If unsure, recommend HOLD.
+
+**REQUIRED — explicit conviction score on its own line:**
+    Conviction: 0.XX     (0.00 = no conviction, 1.00 = maximum conviction)
+
+This score gates the Phase-1 exit gate; without it, your EXIT recommendation
+will not override the active bracket order.
+═══════════════════════════════════════════════════════════════
+"""
+
         # Use centralized trading mode context for trader-specific instructions
         trader_context = f"""
-{agent_context}
+{revise_block}{agent_context}
 
 **EOD TRADER DECISION MAKING:**
 As the EOD Trader, you specialize in making trading decisions at market close for overnight positions. You focus on:

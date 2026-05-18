@@ -245,6 +245,135 @@ def create_config_panel():
                 ], width=12),
             ]),
 
+            html.H5("Position Management:", className="mt-3"),
+            html.Small(
+                "Prevents flip-flop liquidations by respecting active bracket orders. "
+                "Once a bracket is placed, TP/SL is the primary exit; the AI can only "
+                "override on strong dissent (high conviction + clear thesis break, or "
+                "an adverse price move past the configured threshold).",
+                className="text-muted d-block mb-2"
+            ),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Switch(
+                        id="respect-brackets-when-held",
+                        label="Respect Active Brackets",
+                        value=True,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "Master switch — when off, every SELL signal closes immediately (legacy behavior).",
+                        className="text-muted d-block mb-2"
+                    ),
+                ], xs=12, sm=6),
+                dbc.Col([
+                    dbc.Label("Min Hold (hours)", className="mb-1"),
+                    dbc.Input(
+                        id="position-age-min-hold-hours",
+                        type="number",
+                        value=4,
+                        min=0,
+                        max=72,
+                        step=1,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "AI cannot exit a position younger than this unless the override fires.",
+                        className="text-muted d-block mb-2"
+                    ),
+                ], xs=12, sm=6),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Exit Conviction Threshold", className="mb-1"),
+                    dbc.Input(
+                        id="exit-conviction-threshold",
+                        type="number",
+                        value=0.75,
+                        min=0,
+                        max=1,
+                        step=0.05,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "Minimum conviction (0..1) for the AI to override an active bracket.",
+                        className="text-muted d-block mb-2"
+                    ),
+                ], xs=12, sm=6),
+                dbc.Col([
+                    dbc.Label("Adverse Move Override (%)", className="mb-1"),
+                    dbc.Input(
+                        id="exit-adverse-move-pct",
+                        type="number",
+                        value=2.0,
+                        min=0,
+                        max=20,
+                        step=0.5,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "Hard-dissent override: % move against entry that bypasses min-hold.",
+                        className="text-muted d-block mb-3"
+                    ),
+                ], xs=12, sm=6),
+            ]),
+
+            html.H5("Cost Controls:", className="mt-3"),
+            html.Small(
+                "Reduces API spend by skipping low-value re-analyses. Held positions get "
+                "a lightweight news + price check on the quick LLM (no full debate); "
+                "tickers analyzed within the cooldown window are skipped unless price moves.",
+                className="text-muted d-block mb-2"
+            ),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Switch(
+                        id="health-check-mode-for-held",
+                        label="Health-Check Mode for Held Positions",
+                        value=True,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "Held positions skip the full 5-analyst debate; runs news + market only on quick LLM.",
+                        className="text-muted d-block mb-2"
+                    ),
+                ], width=12),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Per-Ticker Cooldown (hours)", className="mb-1"),
+                    dbc.Input(
+                        id="per-ticker-cooldown-hours",
+                        type="number",
+                        value=4,
+                        min=0,
+                        max=72,
+                        step=1,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "0 disables the cooldown (legacy hourly cadence).",
+                        className="text-muted d-block mb-2"
+                    ),
+                ], xs=12, sm=6),
+                dbc.Col([
+                    dbc.Label("Min Price Move to Re-analyze (%)", className="mb-1"),
+                    dbc.Input(
+                        id="min-price-move-reanalysis-pct",
+                        type="number",
+                        value=0.0,
+                        min=0,
+                        max=20,
+                        step=0.25,
+                        className="mb-2"
+                    ),
+                    html.Small(
+                        "Inside cooldown, only re-analyze if price moved at least this much. 0 = strict cooldown.",
+                        className="text-muted d-block mb-3"
+                    ),
+                ], xs=12, sm=6),
+            ]),
+
             html.H5("LLM Provider:", className="mt-3"),
             dbc.RadioItems(
                 id="llm-provider",

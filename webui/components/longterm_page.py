@@ -190,11 +190,36 @@ def _results_card():
     return dbc.Card(
         dbc.CardBody(
             [
-                _section_header(
-                    "leaderboard",
-                    "RANKED CANDIDATES",
-                    "Composite score = ROE · margins · revenue growth · valuation · "
-                    "long-term trend · debt · dividend. Higher is better.",
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            _section_header(
+                                "leaderboard",
+                                "RANKED CANDIDATES",
+                                "Composite score = ROE · margins · revenue growth · valuation · "
+                                "long-term trend · debt · dividend. Higher is better.",
+                            ),
+                        ),
+                        dbc.Col(
+                            dbc.Button(
+                                [
+                                    html.Span(
+                                        "content_copy",
+                                        className="material-symbols-outlined me-1",
+                                        style={"fontSize": "16px",
+                                               "verticalAlign": "middle"},
+                                    ),
+                                    "Export Tickers",
+                                ],
+                                id="lt-export-btn", color="info", outline=True,
+                                size="sm", disabled=True,
+                            ),
+                            width="auto",
+                            className="text-end align-self-start",
+                        ),
+                    ],
+                    align="start",
+                    className="g-2 mb-2",
                 ),
                 html.Div(id="lt-stats", children="Click Run Long-Term Scan to begin.",
                          style={"fontSize": "12px", "color": "#94A3B8",
@@ -555,6 +580,61 @@ def _thesis_card():
     )
 
 
+def _export_tickers_modal():
+    """Modal showing the candidates as a comma-separated ticker list, ready to
+    paste into the Analysis section's watchlist."""
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(
+                dbc.ModalTitle("Export Tickers"),
+                close_button=True,
+            ),
+            dbc.ModalBody(
+                [
+                    html.Div(
+                        "Comma-separated list of all ranked candidates. Paste "
+                        "into the Analysis section's watchlist.",
+                        style={"fontSize": "13px", "color": "#CBD5E1",
+                               "marginBottom": "12px"},
+                    ),
+                    dbc.Textarea(
+                        id="lt-export-textarea",
+                        value="",
+                        readOnly=True,
+                        style={"fontFamily": "'JetBrains Mono', monospace",
+                               "fontSize": "13px", "minHeight": "120px",
+                               "backgroundColor": "#0F172A", "color": "#F1F5F9",
+                               "border": "1px solid #334155"},
+                    ),
+                    html.Div(
+                        id="lt-export-count",
+                        style={"fontSize": "11px", "color": "#64748B",
+                               "fontStyle": "italic", "marginTop": "6px"},
+                    ),
+                ],
+                style={"color": "#F1F5F9"},
+            ),
+            dbc.ModalFooter([
+                dbc.Button("Close", id="lt-export-close-btn",
+                           color="secondary", outline=True),
+                dbc.Button(
+                    [
+                        html.Span(
+                            "content_copy",
+                            className="material-symbols-outlined me-1",
+                            style={"fontSize": "16px", "verticalAlign": "middle"},
+                        ),
+                        "Copy to Clipboard",
+                    ],
+                    id="lt-export-copy-btn", color="info",
+                ),
+            ]),
+        ],
+        id="lt-export-modal",
+        is_open=False, size="lg", centered=True,
+    )
+
+
 def _save_modal():
     return dbc.Modal(
         [
@@ -713,6 +793,7 @@ def create_longterm_page():
             _filters_card(),
             _results_card(),
             _thesis_card(),
+            _export_tickers_modal(),
             _save_modal(),
             _execute_confirm_modal(),
             _liquidate_confirm_modal(),

@@ -13,6 +13,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from webui.utils.state import app_state
 from webui.components.analysis import start_analysis
+from webui.utils.reanalysis_gate import should_reanalyze, record_analysis
+from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+from tradingagents.default_config import DEFAULT_CONFIG
 
 
 def process_symbols_in_parallel_batches(
@@ -117,23 +120,122 @@ def _run_market_hour_loop(symbols, config, hours):
         for symbol in symbols:
             app_state.init_symbol_state(symbol)
 
-        process_symbols_in_parallel_batches(
-            symbols,
-            config.get('analysts_market', True),
-            config.get('analysts_social', True),
-            config.get('analysts_news', True),
-            config.get('analysts_fundamentals', True),
-            config.get('analysts_macro', True),
-            config.get('research_depth', 'moderate'),
-            config.get('allow_shorts', False),
-            config.get('quick_llm', 'gpt-4o-mini'),
-            config.get('deep_llm', 'gpt-4o'),
-            config.get('parallel_execution', False),
-            batch_size=config.get('batch_size', app_state.batch_size),
-            batch_delay=config.get('batch_delay', app_state.batch_delay),
-            stop_condition=lambda: app_state.stop_market_hour,
-            llm_provider=config.get('llm_provider', 'openai')
-        )
+        # ── Phase 3: per-ticker re-analysis cooldown ──
+        # UI-driven Cost Controls override the static defaults; fall back when absent.
+        gate_cfg = {
+            "per_ticker_cooldown_hours": config.get(
+                "per_ticker_cooldown_hours", DEFAULT_CONFIG["per_ticker_cooldown_hours"]
+            ),
+            "min_price_move_pct_for_reanalysis": config.get(
+                "min_price_move_pct_for_reanalysis",
+                DEFAULT_CONFIG["min_price_move_pct_for_reanalysis"],
+            ),
+        }
+        eligible: list[str] = []
+        skipped: list[str] = []
+        for sym in symbols:
+            try:
+                snapshot = AlpacaUtils.get_position_snapshot(sym) or {}
+                cur_price = snapshot.get("current_price") or None
+            except Exception:
+                cur_price = None
+            if should_reanalyze(sym, gate_cfg, app_state, current_price=cur_price):
+                eligible.append(sym)
+            else:
+                skipped.append(sym)
+        if skipped:
+            print(f"[REANALYSIS_GATE] Skipping {len(skipped)} ticker(s) within cooldown: {skipped}")
+
+        if not eligible:
+            print(f"[MARKET_HOUR] No tickers eligible to re-analyze this cycle.")
+        else:
+            # ── Phase 2: partition into held vs entry ──
+            # Held positions get a lightweight news+price-only check on the quick LLM;
+            # entry candidates run the full debate. Held positions never open new
+            # entries — at most KEEP/EXIT (the exit gate further protects against
+            # premature liquidations).
+            held_symbols: list[str] = []
+            entry_symbols: list[str] = []
+            health_check_enabled = bool(
+                config.get("held_position_health_check_only",
+                           DEFAULT_CONFIG.get("held_position_health_check_only", True))
+            )
+            if health_check_enabled:
+                for sym in eligible:
+                    try:
+                        pos_state = AlpacaUtils.get_current_position_state(sym)
+                    except Exception:
+                        pos_state = "NEUTRAL"
+                    if pos_state in ("LONG", "SHORT"):
+                        held_symbols.append(sym)
+                    else:
+                        entry_symbols.append(sym)
+                if held_symbols:
+                    print(f"[HEALTH_CHECK] Held positions on lightweight path: {held_symbols}")
+                if entry_symbols:
+                    print(f"[ENTRY_PATH] Entry candidates on full path: {entry_symbols}")
+            else:
+                entry_symbols = list(eligible)
+
+            quick_llm_value = config.get('quick_llm', 'gpt-4o-mini')
+            deep_llm_value = config.get('deep_llm', 'gpt-4o')
+
+            if entry_symbols:
+                process_symbols_in_parallel_batches(
+                    entry_symbols,
+                    config.get('analysts_market', True),
+                    config.get('analysts_social', True),
+                    config.get('analysts_news', True),
+                    config.get('analysts_fundamentals', True),
+                    config.get('analysts_macro', True),
+                    config.get('research_depth', 'moderate'),
+                    config.get('allow_shorts', False),
+                    quick_llm_value,
+                    deep_llm_value,
+                    config.get('parallel_execution', False),
+                    batch_size=config.get('batch_size', app_state.batch_size),
+                    batch_delay=config.get('batch_delay', app_state.batch_delay),
+                    stop_condition=lambda: app_state.stop_market_hour,
+                    llm_provider=config.get('llm_provider', 'openai')
+                )
+
+            if held_symbols and not app_state.stop_market_hour:
+                # Held positions: minimal analyst set + quick LLM for both quick & deep
+                # think (cuts ~50-70% of cost during holding periods).
+                hc_analysts = set(config.get(
+                    "health_check_analysts",
+                    DEFAULT_CONFIG.get("health_check_analysts", ["market", "news"]),
+                ))
+                use_quick_only = bool(config.get(
+                    "health_check_use_quick_llm_only",
+                    DEFAULT_CONFIG.get("health_check_use_quick_llm_only", True),
+                ))
+                hc_deep_llm = quick_llm_value if use_quick_only else deep_llm_value
+                process_symbols_in_parallel_batches(
+                    held_symbols,
+                    "market" in hc_analysts,
+                    "social" in hc_analysts,
+                    "news" in hc_analysts,
+                    "fundamentals" in hc_analysts,
+                    "macro" in hc_analysts,
+                    "Shallow",  # always shallow for health-check
+                    config.get('allow_shorts', False),
+                    quick_llm_value,
+                    hc_deep_llm,
+                    config.get('parallel_execution', False),
+                    batch_size=config.get('batch_size', app_state.batch_size),
+                    batch_delay=config.get('batch_delay', app_state.batch_delay),
+                    stop_condition=lambda: app_state.stop_market_hour,
+                    llm_provider=config.get('llm_provider', 'openai')
+                )
+
+            # Stamp the cooldown for everything we actually ran this cycle.
+            for sym in entry_symbols + held_symbols:
+                try:
+                    snap = AlpacaUtils.get_position_snapshot(sym) or {}
+                    record_analysis(sym, app_state, price=snap.get("current_price"))
+                except Exception:
+                    record_analysis(sym, app_state, price=None)
 
         if not app_state.stop_market_hour:
             print(f"[MARKET_HOUR] Analysis complete for {fire_hour}:00. Scheduling next run...")
@@ -690,14 +792,25 @@ def register_control_callbacks(app):
          State("batch-delay", "value"),
          State("llm-provider", "value"),
          State("anthropic-quick-llm", "value"),
-         State("anthropic-deep-llm", "value")]
+         State("anthropic-deep-llm", "value"),
+         State("respect-brackets-when-held", "value"),
+         State("position-age-min-hold-hours", "value"),
+         State("exit-conviction-threshold", "value"),
+         State("exit-adverse-move-pct", "value"),
+         State("health-check-mode-for-held", "value"),
+         State("per-ticker-cooldown-hours", "value"),
+         State("min-price-move-reanalysis-pct", "value")]
     )
     def on_control_button_click(n_clicks, button_children, tickers, analysts_market, analysts_social, analysts_news,
                                analysts_fundamentals, analysts_macro, research_depth, quick_llm, deep_llm,
                                allow_shorts, loop_enabled, loop_interval, trade_enabled, trade_amount, use_ai_sizing,
                                use_stop_loss, use_take_profit, use_bracket_orders,
                                market_hour_enabled, market_hours_input, parallel_execution,
-                               batch_size, batch_delay, llm_provider, anthropic_quick_llm, anthropic_deep_llm):
+                               batch_size, batch_delay, llm_provider, anthropic_quick_llm, anthropic_deep_llm,
+                               respect_brackets_when_held, position_age_min_hold_hours,
+                               exit_conviction_threshold, exit_adverse_move_pct,
+                               health_check_mode_for_held, per_ticker_cooldown_hours,
+                               min_price_move_reanalysis_pct):
         """Handle control button clicks"""
         # Detect which property triggered this callback
         triggered_prop = None
@@ -764,6 +877,45 @@ def register_control_callbacks(app):
         app_state.use_take_profit = use_take_profit if use_take_profit is not None else True  # Default to True
         app_state.use_bracket_orders = use_bracket_orders if use_bracket_orders is not None else False
 
+        # ── Phase 5: Position Management + Cost Controls ──
+        # Captured from the new UI sections; threaded into loop_config and market_hour_config
+        # below. Falls back to DEFAULT_CONFIG values when the UI sends None or invalid input.
+        def _safe_float(value, default):
+            try:
+                return float(value) if value is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        app_state.exit_gate_config = {
+            "respect_brackets_when_held": (
+                respect_brackets_when_held if respect_brackets_when_held is not None
+                else DEFAULT_CONFIG["respect_brackets_when_held"]
+            ),
+            "position_age_min_hold_hours": max(
+                0.0, _safe_float(position_age_min_hold_hours, DEFAULT_CONFIG["position_age_min_hold_hours"])
+            ),
+            # Conviction is naturally bounded to [0, 1]; a threshold outside that range
+            # silently disables the gate (>1 = always respect; <0 = always close).
+            "exit_conviction_threshold": max(
+                0.0, min(1.0, _safe_float(exit_conviction_threshold, DEFAULT_CONFIG["exit_conviction_threshold"]))
+            ),
+            "exit_adverse_move_pct": max(
+                0.0, _safe_float(exit_adverse_move_pct, DEFAULT_CONFIG["exit_adverse_move_pct"])
+            ),
+        }
+        app_state.cost_controls = {
+            "held_position_health_check_only": (
+                health_check_mode_for_held if health_check_mode_for_held is not None
+                else DEFAULT_CONFIG["held_position_health_check_only"]
+            ),
+            "per_ticker_cooldown_hours": max(
+                0.0, _safe_float(per_ticker_cooldown_hours, DEFAULT_CONFIG["per_ticker_cooldown_hours"])
+            ),
+            "min_price_move_pct_for_reanalysis": max(
+                0.0, _safe_float(min_price_move_reanalysis_pct, DEFAULT_CONFIG["min_price_move_pct_for_reanalysis"])
+            ),
+        }
+
         # Validate market hour configuration if enabled
         if market_hour_enabled:
             from webui.utils.market_hours import validate_market_hours
@@ -818,6 +970,9 @@ def register_control_callbacks(app):
                     'parallel_execution': parallel_execution,
                     'batch_size': batch_size,
                     'batch_delay': batch_delay,
+                    # Phase 5 — Position Management + Cost Controls
+                    **app_state.exit_gate_config,
+                    **app_state.cost_controls,
                 }
                 app_state.start_market_hour_mode(symbols, market_hour_config, [market_hour_start, market_hour_end])
                 _run_market_hour_loop(symbols, market_hour_config, [market_hour_start, market_hour_end])

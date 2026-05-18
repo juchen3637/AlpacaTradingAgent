@@ -256,7 +256,7 @@ def build_lwc_payload(
 
     candles, volume = _candles_payload(df)
 
-    return {
+    payload: dict[str, Any] = {
         "seriesData": [candles, volume],
         "seriesTypes": ["candlestick", "histogram"],
         "seriesOptions": [_CANDLE_OPTIONS, _VOLUME_OPTIONS],
@@ -264,6 +264,14 @@ def build_lwc_payload(
         "seriesMarkers": [markers, []],
         "chartOptions": _CHART_OPTIONS_DEFAULT,
     }
+
+    # Day-trading freshness indicator: surface the latest bar's UTC seconds
+    # so the scanner can show "Latest bar: HH:MM · Xs old". Only meaningful
+    # for the live 1-min view; other periods are historical and don't need it.
+    if period == "1m" and candles:
+        payload["lastBarTime"] = candles[-1]["time"]
+
+    return payload
 
 
 def empty_lwc_payload() -> dict[str, Any]:

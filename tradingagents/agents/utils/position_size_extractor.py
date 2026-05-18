@@ -230,6 +230,66 @@ def validate_position_size(
     return size_dollars
 
 
+def extract_conviction(text: str) -> float:
+    """Extract a 0..1 conviction score from agent output text.
+
+    The judge / risk-manager prompts can produce conviction in several forms:
+      - Explicit: ``Conviction: 0.82`` or ``Confidence: 75%``
+      - Verbal: "high conviction", "strong conviction", "low conviction"
+      - JSON block with ``conviction`` or ``confidence`` key
+
+    Returns 0.5 (neutral) if extraction fails — biases toward respecting the
+    bracket when paired with a typical 0.75 threshold (safe-fail).
+    """
+    if not text:
+        return 0.5
+
+    # Try JSON block first (structured output)
+    json_matches = list(re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL))
+    for jm in reversed(json_matches):
+        try:
+            data = _json.loads(jm.group(1))
+            for key in ("conviction", "confidence", "conviction_score"):
+                v = data.get(key)
+                if v is None:
+                    continue
+                if isinstance(v, str):
+                    v = v.strip().rstrip("%")
+                num = float(v)
+                if num > 1.0:  # percent form
+                    num /= 100.0
+                return max(0.0, min(1.0, num))
+        except (ValueError, _json.JSONDecodeError):
+            continue
+
+    # Explicit numeric: "Conviction: 0.82" or "Confidence: 75%"
+    pattern_explicit = r"(?:conviction|confidence)\s*(?:score|level)?\s*[:=]\s*([\d.]+)\s*(%?)"
+    m = re.search(pattern_explicit, text, re.IGNORECASE)
+    if m:
+        try:
+            num = float(m.group(1))
+            if m.group(2) == "%" or num > 1.0:
+                num /= 100.0
+            return max(0.0, min(1.0, num))
+        except ValueError:
+            pass
+
+    # Verbal markers — coarse but better than 0.5 default.
+    lower = text.lower()
+    if re.search(r"\b(very high|extremely high|highest)\s+(conviction|confidence)\b", lower):
+        return 0.9
+    if re.search(r"\b(high|strong|firm)\s+(conviction|confidence)\b", lower):
+        return 0.8
+    if re.search(r"\b(moderate|medium)\s+(conviction|confidence)\b", lower):
+        return 0.6
+    if re.search(r"\b(low|weak|tentative)\s+(conviction|confidence)\b", lower):
+        return 0.3
+    if re.search(r"\b(very low|no)\s+(conviction|confidence)\b", lower):
+        return 0.15
+
+    return 0.5
+
+
 def convert_percentage_to_dollars(percentage: float, account_info: dict) -> float:
     """
     Convert percentage-based sizing to dollar amount.

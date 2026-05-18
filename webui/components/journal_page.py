@@ -76,7 +76,6 @@ def create_journal_page():
                             value=None,
                             clearable=True,
                             placeholder="All tickers",
-                            style={"color": "#0F172A"},
                         ),
                     ], xs=12, lg=3),
                     dbc.Col([
@@ -97,7 +96,6 @@ def create_journal_page():
                             ],
                             value="ALL",
                             clearable=False,
-                            style={"color": "#0F172A"},
                         ),
                     ], xs=12, lg=2),
                     dbc.Col([
@@ -115,7 +113,6 @@ def create_journal_page():
                             ],
                             value="ALL",
                             clearable=False,
-                            style={"color": "#0F172A"},
                         ),
                     ], xs=12, lg=3),
                     dbc.Col([
@@ -134,22 +131,33 @@ def create_journal_page():
                             ],
                             value=100,
                             clearable=False,
-                            style={"color": "#0F172A"},
                         ),
                     ], xs=12, lg=2),
                     dbc.Col([
                         html.Label(" ", style={"fontSize": "11px",
                                                "display": "block"}),
-                        dbc.Button(
-                            [html.Span("refresh", className="material-symbols-outlined me-1",
-                                       style={"fontSize": "16px", "verticalAlign": "middle"}),
-                             "Refresh"],
-                            id="journal-refresh-btn",
-                            color="primary",
-                            outline=True,
-                            size="sm",
-                            className="w-100",
-                        ),
+                        html.Div([
+                            dbc.Button(
+                                [html.Span("refresh", className="material-symbols-outlined me-1",
+                                           style={"fontSize": "16px", "verticalAlign": "middle"}),
+                                 "Refresh"],
+                                id="journal-refresh-btn",
+                                color="primary",
+                                outline=True,
+                                size="sm",
+                                style={"flex": "1"},
+                            ),
+                            dbc.Button(
+                                [html.Span("delete_forever", className="material-symbols-outlined",
+                                           style={"fontSize": "16px", "verticalAlign": "middle"})],
+                                id="journal-clear-btn",
+                                color="danger",
+                                outline=True,
+                                size="sm",
+                                title="Clear all journal entries",
+                                style={"marginLeft": "6px"},
+                            ),
+                        ], style={"display": "flex", "width": "100%"}),
                     ], xs=12, lg=2),
                 ]),
                 # Backfill row (hidden — kept for callback compatibility)
@@ -270,4 +278,60 @@ def create_journal_page():
 
         # Hidden store for tracking selected decision
         dcc.Store(id="journal-selected-decision", data=None),
+
+        # Clear-journal confirmation modal
+        dbc.Modal(
+            [
+                dbc.ModalHeader(
+                    dbc.ModalTitle([
+                        html.Span("warning", className="material-symbols-outlined me-2",
+                                  style={"color": "#EF4444", "verticalAlign": "middle",
+                                         "fontSize": "22px"}),
+                        "Clear Journal?",
+                    ]),
+                    close_button=False,
+                ),
+                dbc.ModalBody([
+                    html.P(
+                        "This will permanently delete every recorded decision, trade, "
+                        "and outcome from the journal database.",
+                        style={"marginBottom": "8px"},
+                    ),
+                    html.P(
+                        "This action cannot be undone.",
+                        style={"color": "#EF4444", "fontWeight": "600",
+                               "marginBottom": "12px"},
+                    ),
+                    html.Div(id="journal-clear-preview",
+                             style={"fontSize": "12px", "color": "#94A3B8"}),
+                ]),
+                dbc.ModalFooter([
+                    dbc.Button("Cancel", id="journal-clear-cancel-btn",
+                               color="secondary", outline=True),
+                    dbc.Button(
+                        [html.Span("delete_forever", className="material-symbols-outlined me-1",
+                                   style={"fontSize": "16px", "verticalAlign": "middle"}),
+                         "Yes, clear everything"],
+                        id="journal-clear-confirm-btn",
+                        color="danger",
+                    ),
+                ]),
+            ],
+            id="journal-clear-modal",
+            is_open=False,
+            backdrop="static",
+            centered=True,
+        ),
+
+        # Toast for clear-success feedback
+        dbc.Toast(
+            id="journal-clear-toast",
+            header="Journal cleared",
+            is_open=False,
+            dismissable=True,
+            duration=4000,
+            icon="success",
+            style={"position": "fixed", "top": 80, "right": 20,
+                   "minWidth": "320px", "zIndex": 1100},
+        ),
     ])

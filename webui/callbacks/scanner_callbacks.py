@@ -9,7 +9,8 @@ Handles:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import time as _time
+from datetime import datetime, timezone
 from typing import Optional
 
 from dash import Input, Output, State, html, no_update
@@ -94,6 +95,40 @@ def _results_to_rows(results) -> list[dict]:
             "score": r.score,
         })
     return rows
+
+
+def _format_freshness(last_bar_time: Optional[int], timeframe: Optional[str]):
+    """Render the "Latest bar … Xs old" line under the chart.
+
+    Shown only on the live 1-min view, where staleness signals an IEX feed
+    gap. Color steps amber at 90s and red at 5min so the user can tell at a
+    glance whether the chart actually advanced or the feed went quiet.
+    """
+    if timeframe != "1m" or not last_bar_time:
+        return None
+    try:
+        bar_dt = datetime.fromtimestamp(int(last_bar_time), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    age_s = max(0, int(_time.time()) - int(last_bar_time))
+    if age_s >= 300:
+        color = "#EF4444"
+    elif age_s >= 90:
+        color = "#F59E0B"
+    else:
+        color = "#22C55E"
+    return html.Div(
+        [
+            html.Span("Latest bar: ", style={"color": "#94A3B8"}),
+            html.Span(bar_dt.strftime("%H:%M:%S UTC"),
+                      style={"color": "#E2E8F0", "fontWeight": "600",
+                             "fontVariantNumeric": "tabular-nums"}),
+            html.Span(f" · {age_s}s old",
+                      style={"color": color, "fontWeight": "600",
+                             "marginLeft": "6px"}),
+        ],
+        style={"fontSize": "11px", "marginTop": "2px"},
+    )
 
 
 def _format_position_status(position: Optional[dict]):
@@ -1305,7 +1340,11 @@ def register_scanner_callbacks(app):
             logger.exception("build_lwc_payload failed for %s", symbol)
             return no_update, hidden, "", empty_state
 
-        status = _format_position_status(position)
+        position_line = _format_position_status(position)
+        freshness_line = _format_freshness(payload.get("lastBarTime"), timeframe)
+        status = html.Div(
+            [position_line] + ([freshness_line] if freshness_line is not None else [])
+        )
         order_state = {
             "unfilled_count": len(unfilled),
             "has_position": position is not None,

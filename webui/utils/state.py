@@ -91,6 +91,23 @@ class AppState:
         self.trade_amount = 1000
         self.trade_occurred = False
         
+        # Per-ticker re-analysis gate state — tracks when a ticker was last
+        # analyzed and at what price, so the scheduler can skip cooldown-bound
+        # re-runs. Accessed concurrently from the market-hour loop thread, the
+        # parallel-batch worker threads, and Dash callbacks; all reads/writes
+        # must hold ``reanalysis_lock``. See webui/utils/reanalysis_gate.py.
+        import threading as _threading
+        self.reanalysis_lock = _threading.Lock()
+        self.last_analysis_at = {}
+        self.last_analysis_price = {}
+
+        # Phase 5 — UI-driven overrides for the exit gate and cost controls.
+        # Empty dicts before the first control-button click; populated by
+        # on_control_button_click. Consumers fall back to DEFAULT_CONFIG when
+        # a key is absent.
+        self.exit_gate_config = {}
+        self.cost_controls = {}
+
         self.refresh_interval = 1.0  # seconds
         self.analysis_complete = False
         self.analysis_results = None

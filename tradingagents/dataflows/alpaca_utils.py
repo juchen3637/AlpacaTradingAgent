@@ -104,6 +104,21 @@ def get_alpaca_trading_client() -> TradingClient:
     return TradingClient(api_key, api_secret, paper=use_paper)
 
 
+def _default_data_feed() -> DataFeed:
+    """Resolve the default Alpaca market-data feed from the environment.
+
+    `ALPACA_DATA_FEED` accepts iex / sip / otc (case-insensitive). Anything
+    else, missing, or empty falls back to IEX — the only feed available on
+    the free tier — so an unset env var keeps the historical behaviour.
+    """
+    raw = (get_api_key("alpaca_data_feed", "ALPACA_DATA_FEED") or "").strip().lower()
+    if raw == "sip":
+        return DataFeed.SIP
+    if raw == "otc":
+        return DataFeed.OTC
+    return DataFeed.IEX
+
+
 def _parse_timeframe(tf: Union[str, TimeFrame]) -> TimeFrame:
     """Convert a string like '5Min' or a TimeFrame instance into a TimeFrame."""
     if isinstance(tf, TimeFrame):
@@ -144,7 +159,7 @@ class AlpacaUtils:
         end_date: Optional[Union[str, datetime]] = None,
         timeframe: Union[str, TimeFrame] = "1Day",
         save_path: Optional[str] = None,
-        feed: DataFeed = DataFeed.IEX
+        feed: Optional[DataFeed] = None
     ) -> pd.DataFrame:
         """
         Fetch historical OHLCV data for a stock or crypto symbol.
@@ -155,11 +170,15 @@ class AlpacaUtils:
             end_date: optional 'YYYY-MM-DD' string or datetime
             timeframe: e.g. "1Min","5Min","15Min","1Hour","1Day" or a TimeFrame instance
             save_path: if provided, path to write a CSV
-            feed: DataFeed enum (default IEX)
+            feed: explicit DataFeed override; if None, resolves from ALPACA_DATA_FEED
+                (iex/sip/otc) and falls back to IEX
 
         Returns:
             pandas DataFrame with columns ['timestamp','open','high','low','close','volume']
         """
+        if feed is None:
+            feed = _default_data_feed()
+
         # normalize dates
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date) + timedelta(days=1) if end_date else None
@@ -482,6 +501,92 @@ class AlpacaUtils:
             # Log and default to neutral so agent prompts still work.
             print(f"Error determining current position for {symbol}: {e}")
             return "NEUTRAL"
+
+    @staticmethod
+    def get_position_snapshot(symbol: str) -> dict:
+        """Return entry/current price and qty for an open position, or empty dict.
+
+        Used by the exit gate to compute adverse-move % vs entry without
+        re-fetching the entire positions table.
+        """
+        try:
+            client = get_alpaca_trading_client()
+            positions = client.get_all_positions()
+            requested = symbol.upper().replace("/", "")
+            for pos in positions:
+                if pos.symbol.upper() != requested:
+                    continue
+                try:
+                    avg_entry = float(pos.avg_entry_price)
+                except (TypeError, ValueError):
+                    avg_entry = 0.0
+                try:
+                    current_price = float(pos.current_price)
+                except (TypeError, ValueError):
+                    current_price = 0.0
+                try:
+                    qty = float(pos.qty)
+                except (TypeError, ValueError):
+                    qty = 0.0
+                return {
+                    "symbol": symbol,
+                    "avg_entry": avg_entry,
+                    "current_price": current_price,
+                    "qty": qty,
+                }
+            return {}
+        except Exception as e:
+            print(f"Error fetching position snapshot for {symbol}: {e}")
+            return {}
+
+    @staticmethod
+    def get_position_opened_at(symbol: str):
+        """Return the timestamp the current position for ``symbol`` was first opened.
+
+        Walks recent orders looking for the *earliest* filled entry order
+        (BUY for a LONG position, SELL for a SHORT) for the symbol. Returns a
+        timezone-aware ``datetime`` or ``None`` when the position appears to have
+        been opened outside the agent's recent order history.
+
+        Returning the earliest fill (not the latest) is intentional: for a
+        position scaled in over multiple fills, the age clock should reflect
+        when the original entry occurred, not when the most recent partial
+        landed. Otherwise the 5-minute fresh-fill guard would reset on every
+        scale-in and keep the gate perpetually engaged.
+        """
+        try:
+            from datetime import datetime, timezone
+
+            position_state = AlpacaUtils.get_current_position_state(symbol)
+            if position_state not in ("LONG", "SHORT"):
+                return None
+            entry_side = "buy" if position_state == "LONG" else "sell"
+            requested = symbol.upper().replace("/", "")
+
+            orders = AlpacaUtils.get_recent_orders(limit=200) or []
+            best_ts: datetime | None = None
+            for order in orders:
+                if str(order.get("Asset", "")).upper().replace("/", "") != requested:
+                    continue
+                if str(order.get("Side", "")).lower() != entry_side:
+                    continue
+                if str(order.get("Status", "")).lower() != "filled":
+                    continue
+                filled_at = order.get("filled_at")
+                if not filled_at:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(str(filled_at).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if best_ts is None or ts < best_ts:
+                    best_ts = ts
+            return best_ts
+        except Exception as e:
+            print(f"Error determining position open time for {symbol}: {e}")
+            return None
 
     @staticmethod
     def place_market_order(symbol: str, side: str, notional: float = None, qty: float = None) -> dict:

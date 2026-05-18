@@ -8,6 +8,7 @@ from ..utils.agent_trading_modes import (
 )
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.agents.utils.agent_utils import log_llm_start, log_llm_end
+from tradingagents.agents.utils.thesis_store import get_latest_entry_thesis
 
 # Import prompt capture utility
 try:
@@ -133,9 +134,43 @@ Stop Loss: $327.00  (below entry - limits downside)
 Target 1: $352.00  (above entry - profit taking)
 Target 2: $367.00  (above entry - extended profit)"""
 
+        # Held-position framing — the risk manager is the final arbiter; it must
+        # produce a structured Conviction score that the Phase 1 exit gate consumes.
+        revise_block = ""
+        if current_position != "NEUTRAL":
+            latest_thesis = get_latest_entry_thesis(company_name) or {}
+            thesis_text = latest_thesis.get("thesis") or "(no recorded entry thesis)"
+            entry_price_str = (
+                f"${latest_thesis['price']:.2f}" if latest_thesis.get("price") else "(unknown entry price)"
+            )
+            revise_block = f"""
+═══════════════════════════════════════════════════════════════
+**REVISE EXISTING POSITION — RISK MANAGER FINAL ARBITER**
+═══════════════════════════════════════════════════════════════
+The portfolio already holds an open {current_position} position in {company_name}.
+Bracket orders (stop-loss + take-profit) are actively protecting this position.
+
+**Original entry thesis** (recorded at entry, price {entry_price_str}):
+{thesis_text}
+
+**Default to HOLD.** Override the active bracket only when BOTH:
+  (a) The thesis above is materially broken (cite the specific change), AND
+  (b) Your final conviction in the EXIT decision is high (>= 0.75).
+
+The Phase-1 exit gate consumes your conviction score. Without a high score,
+the bracket is preserved. Treat any vague or marginal dissent as HOLD.
+
+**REQUIRED — emit an explicit conviction score on its own line:**
+    Conviction: 0.XX     (0.00 .. 1.00)
+
+If you produce a SELL/EXIT recommendation without a clear conviction score,
+the gate will respect the bracket and your recommendation will not execute.
+═══════════════════════════════════════════════════════════════
+"""
+
         # Use centralized trading mode context
         manager_context = f"""
-{agent_context}
+{revise_block}{agent_context}
 
 **EOD TRADING RISK MANAGEMENT:**
 As the EOD Trading Risk Manager, you specialize in managing risks for overnight position holds. Your focus areas:

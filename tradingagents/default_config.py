@@ -33,6 +33,19 @@ DEFAULT_CONFIG = {
     "use_take_profit": True,  # Enable take profit orders
     "stop_loss_order_type": "stop",  # "stop" or "stop_limit"
     "scale_out_targets": True,  # Use multiple targets to scale out
+    # Exit gate settings — prevent flip-flop liquidations of fresh positions
+    "respect_brackets_when_held": True,  # Once a bracket is placed, TP/SL is the primary exit
+    "position_age_min_hold_hours": 4,  # AI cannot exit a position younger than this (unless adverse move)
+    "exit_conviction_threshold": 0.75,  # Minimum conviction (0..1) required to override an active bracket
+    "exit_adverse_move_pct": 2.0,  # Hard-dissent override: adverse move % vs entry that bypasses min-hold
+    # Health-check mode for held positions — full debate only on entries; held use lightweight check
+    "held_position_health_check_only": True,  # Held positions use a slimmed analyst set + quick LLM
+    "health_check_analysts": ["market", "news"],  # Analysts to run for held-position health checks
+    "health_check_use_quick_llm_only": True,  # Use quick LLM for both quick and deep think during health checks
+    # Per-ticker cooldown / change-detection — skip re-analysis when nothing material has changed
+    "per_ticker_cooldown_hours": 4,  # Minimum hours between re-analyses of the same ticker
+    "min_price_move_pct_for_reanalysis": 0.0,  # If >0, skip re-analysis when price moved less than this %
+    "require_fresh_news_for_reanalysis": False,  # If True, only re-analyze when news cache shows new items
     # Execution settings
     "parallel_analysts": False,  # False = Sequential execution (more reliable), True = Parallel execution (faster)
     # Tool settings (DEPRECATED: All tools now use smart caching automatically)

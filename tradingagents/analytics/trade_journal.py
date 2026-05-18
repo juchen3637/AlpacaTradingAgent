@@ -392,6 +392,30 @@ class TradeJournal:
                 row = conn.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()
             return int(row["c"])
 
+    # ---- Destructive ----------------------------------------------------
+
+    def clear_all(self) -> dict[str, int]:
+        """Delete every row from outcomes, trades, and decisions.
+
+        Returns the number of rows deleted from each table for confirmation/logging.
+        Schema is preserved.
+        """
+        with self._lock, self._connect() as conn:
+            outcomes = conn.execute("SELECT COUNT(*) AS c FROM outcomes").fetchone()["c"]
+            trades = conn.execute("SELECT COUNT(*) AS c FROM trades").fetchone()["c"]
+            decisions = conn.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
+            conn.execute("DELETE FROM outcomes")
+            conn.execute("DELETE FROM trades")
+            conn.execute("DELETE FROM decisions")
+            conn.execute(
+                "DELETE FROM sqlite_sequence WHERE name IN ('outcomes', 'trades', 'decisions')"
+            )
+        return {
+            "decisions": int(decisions),
+            "trades": int(trades),
+            "outcomes": int(outcomes),
+        }
+
     # ---- Helpers --------------------------------------------------------
 
     @staticmethod

@@ -809,10 +809,71 @@ def register_journal_callbacks(app):
             return _empty_figure(f"Error loading positions: {e}"), html.Div()
         return _unrealized_pnl_chart(positions), _unrealized_summary(positions)
 
+    # ── Clear journal: open modal → confirm → wipe → refresh ────────────
+    @app.callback(
+        [
+            Output("journal-clear-modal", "is_open"),
+            Output("journal-clear-preview", "children"),
+        ],
+        [
+            Input("journal-clear-btn", "n_clicks"),
+            Input("journal-clear-cancel-btn", "n_clicks"),
+            Input("journal-clear-confirm-btn", "n_clicks"),
+        ],
+        prevent_initial_call=True,
+    )
+    def _toggle_clear_modal(open_clicks, cancel_clicks, confirm_clicks):
+        triggered = ctx.triggered_id
+        if triggered == "journal-clear-btn":
+            try:
+                journal = get_journal()
+                total = journal.count_decisions()
+            except Exception as e:
+                print(f"[JOURNAL UI] Failed to count decisions: {e}")
+                total = None
+            preview = (
+                f"Currently {total} decision{'s' if total != 1 else ''} on record."
+                if total is not None
+                else "Could not read current journal size — proceed only if you're sure."
+            )
+            return True, preview
+        # cancel or confirm both close the modal; confirm hand-off happens in the next callback
+        return False, no_update
+
+    @app.callback(
+        [
+            Output("journal-clear-toast", "is_open"),
+            Output("journal-clear-toast", "children"),
+            Output("journal-refresh-btn", "n_clicks", allow_duplicate=True),
+        ],
+        Input("journal-clear-confirm-btn", "n_clicks"),
+        State("journal-refresh-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _confirm_clear_journal(n_clicks, refresh_clicks):
+        if not n_clicks:
+            return no_update, no_update, no_update
+        try:
+            deleted = get_journal().clear_all()
+        except Exception as e:
+            print(f"[JOURNAL UI] Failed to clear journal: {e}")
+            return True, html.Span(
+                f"Error clearing journal: {e}", style={"color": "#EF4444"},
+            ), no_update
+
+        msg = (
+            f"Removed {deleted['decisions']} decision"
+            f"{'s' if deleted['decisions'] != 1 else ''}, "
+            f"{deleted['trades']} trade{'s' if deleted['trades'] != 1 else ''}, "
+            f"{deleted['outcomes']} outcome{'s' if deleted['outcomes'] != 1 else ''}."
+        )
+        new_refresh = (refresh_clicks or 0) + 1
+        return True, msg, new_refresh
+
     @app.callback(
         [
             Output("journal-backfill-status", "children"),
-            Output("journal-refresh-btn", "n_clicks"),
+            Output("journal-refresh-btn", "n_clicks", allow_duplicate=True),
         ],
         Input("journal-backfill-btn", "n_clicks"),
         State("journal-backfill-lookback", "value"),
