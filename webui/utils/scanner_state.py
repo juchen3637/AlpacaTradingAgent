@@ -22,6 +22,7 @@ class _ScannerState:
         self._lock = threading.Lock()
         self._last_results: list[ScanResult] = []
         self._last_scan_ts: Optional[float] = None
+        self._scan_id: int = 0
         self._playbooks: OrderedDict[tuple, tuple[float, Playbook]] = OrderedDict()
 
     # ─── scan results ──────────────────────────────────────────────────
@@ -30,6 +31,7 @@ class _ScannerState:
         with self._lock:
             self._last_results = list(results)
             self._last_scan_ts = time.time()
+            self._scan_id += 1
 
     def get_results(self) -> list[ScanResult]:
         with self._lock:
@@ -39,20 +41,23 @@ class _ScannerState:
         with self._lock:
             return self._last_scan_ts
 
+    def scan_id(self) -> int:
+        with self._lock:
+            return self._scan_id
+
     # ─── playbook LRU ──────────────────────────────────────────────────
 
     @staticmethod
-    def _bucket_key(symbol: str, strategy_id: str, model: str = "") -> tuple:
-        # Keyed only by (symbol, strategy_id, model) — freshness is enforced by
-        # the TTL on `set_playbook` entries, not by a wall-clock bucket. Avoids
-        # surprise cache misses at every 5-minute boundary that would hide the
-        # chart while the user is monitoring a live position.
-        return (symbol.upper(), strategy_id, model or "")
+    def _bucket_key(symbol: str, strategy_id: str, model: str = "", scan_id: int = 0) -> tuple:
+        # scan_id is incremented on every set_results() call so a new scan
+        # always busts the playbook cache while repeated clicks within the same
+        # scan session still hit the cache.
+        return (symbol.upper(), strategy_id, model or "", scan_id)
 
     def get_playbook(
-        self, symbol: str, strategy_id: str, model: str = ""
+        self, symbol: str, strategy_id: str, model: str = "", scan_id: int = 0
     ) -> Optional[Playbook]:
-        key = self._bucket_key(symbol, strategy_id, model)
+        key = self._bucket_key(symbol, strategy_id, model, scan_id)
         with self._lock:
             entry = self._playbooks.get(key)
             if entry is None:
@@ -66,9 +71,9 @@ class _ScannerState:
             return playbook
 
     def set_playbook(
-        self, symbol: str, strategy_id: str, playbook: Playbook, model: str = ""
+        self, symbol: str, strategy_id: str, playbook: Playbook, model: str = "", scan_id: int = 0
     ) -> None:
-        key = self._bucket_key(symbol, strategy_id, model)
+        key = self._bucket_key(symbol, strategy_id, model, scan_id)
         with self._lock:
             self._playbooks[key] = (time.time(), playbook)
             while len(self._playbooks) > _PLAYBOOK_MAX_ENTRIES:

@@ -525,8 +525,9 @@ def register_scanner_callbacks(app):
             return html.Div("Ticker no longer in latest scan. Re-run scan.",
                             style={"color": "#F59E0B"})
 
-        # Model included in cache key so switching LLMs re-generates.
-        cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "")
+        # Cache key includes scan_id so any new scan busts the playbook cache.
+        current_scan_id = SCANNER_STATE.scan_id()
+        cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", current_scan_id)
         if cached is not None:
             return _format_playbook(cached)
 
@@ -538,7 +539,135 @@ def register_scanner_callbacks(app):
             return html.Div(f"Playbook generation failed: {exc}",
                             style={"color": "#EF4444"})
 
-        SCANNER_STATE.set_playbook(symbol, strategy_id, playbook, model or "")
+        SCANNER_STATE.set_playbook(symbol, strategy_id, playbook, model or "", current_scan_id)
+        return _format_playbook(playbook)
+
+    # ── Speculation signal chip → playbook panel ──────────────────────
+
+    @app.callback(
+        [
+            Output("spec-playbook-panel", "style"),
+            Output("spec-playbook-signal-header", "children"),
+        ],
+        Input("speculation-clicked-signal", "data"),
+        prevent_initial_call=True,
+    )
+    def show_spec_playbook_panel(signal_data):
+        if not signal_data or not signal_data.get("ticker"):
+            return {"display": "none"}, None
+        ticker = signal_data.get("ticker", "")
+        direction = signal_data.get("direction", "bullish")
+        company = signal_data.get("company_name", "")
+        catalyst = signal_data.get("catalyst_type", "")
+        reasoning = signal_data.get("reasoning", "")
+        event_headline = signal_data.get("event_headline", "")
+        dir_color = "#22C55E" if direction == "bullish" else "#EF4444"
+        arrow = "▲" if direction == "bullish" else "▼"
+        header = html.Div([
+            html.Div([
+                html.Span(
+                    f"{arrow} {ticker}",
+                    style={"backgroundColor": dir_color, "color": "#0F172A",
+                           "fontWeight": "800", "fontSize": "13px",
+                           "padding": "2px 10px", "borderRadius": "4px",
+                           "marginRight": "10px",
+                           "fontFamily": "'Space Grotesk', monospace"},
+                ),
+                html.Span(direction.upper(),
+                          style={"color": dir_color, "fontWeight": "700",
+                                 "fontSize": "11px", "marginRight": "8px"}),
+                html.Span(company, style={"color": "#CBD5E1", "fontSize": "13px"}),
+                html.Span(f"  ·  {catalyst}",
+                          style={"color": "#A78BFA", "fontSize": "11px"})
+                if catalyst else None,
+            ], style={"display": "flex", "alignItems": "center",
+                      "flexWrap": "wrap", "gap": "4px", "marginBottom": "6px"}),
+            html.Div(
+                event_headline,
+                style={"fontSize": "12px", "color": "#64748B",
+                       "fontStyle": "italic", "marginBottom": "4px"},
+            ) if event_headline else None,
+            html.Div(
+                reasoning,
+                style={"fontSize": "12px", "color": "#94A3B8", "lineHeight": "1.5",
+                       "borderLeft": f"2px solid {dir_color}", "paddingLeft": "10px"},
+            ) if reasoning else None,
+        ])
+        return {"display": "block"}, header
+
+    @app.callback(
+        [
+            Output("spec-signal-llm-model", "options"),
+            Output("spec-signal-llm-model", "value"),
+        ],
+        Input("spec-signal-llm-provider", "value"),
+        prevent_initial_call=True,
+    )
+    def update_spec_signal_model_options(provider):
+        opts = PLAYBOOK_MODEL_OPTIONS.get(provider or "openai", [])
+        default = opts[0]["value"] if opts else None
+        return opts, default
+
+    _spec_pb_idle = [
+        html.Span("auto_awesome", className="material-symbols-outlined me-1",
+                  style={"fontSize": "16px", "verticalAlign": "middle"}),
+        "Generate Playbook",
+    ]
+    _spec_pb_busy = [
+        html.Span(className="spinner-border spinner-border-sm me-2",
+                  role="status", **{"aria-hidden": "true"}),
+        "Generating...",
+    ]
+
+    @app.callback(
+        Output("spec-signal-playbook-output", "children"),
+        Input("spec-signal-playbook-btn", "n_clicks"),
+        [
+            State("speculation-clicked-signal", "data"),
+            State("spec-signal-llm-provider", "value"),
+            State("spec-signal-llm-model", "value"),
+        ],
+        running=[
+            (Output("spec-signal-playbook-btn", "disabled"), True, False),
+            (Output("spec-signal-playbook-btn", "children"), _spec_pb_busy, _spec_pb_idle),
+        ],
+        prevent_initial_call=True,
+    )
+    def generate_spec_signal_playbook(n_clicks, signal_data, provider, model):
+        if not n_clicks or not signal_data:
+            return no_update
+        ticker = signal_data.get("ticker", "")
+        if not ticker:
+            return html.Div("No signal selected.", style={"color": "#64748B"})
+
+        last_price = 0.0
+        try:
+            from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+            quote = AlpacaUtils.get_latest_quote(ticker)
+            bid = quote.get("bid_price") or 0.0
+            ask = quote.get("ask_price") or 0.0
+            last_price = round((bid + ask) / 2, 2) if (bid and ask) else (bid or ask)
+        except Exception as exc:
+            logger.warning("Could not fetch live price for %s: %s", ticker, exc)
+
+        try:
+            from tradingagents.scanner.playbook_llm import generate_speculation_playbook
+            playbook = generate_speculation_playbook(
+                ticker=ticker,
+                company_name=signal_data.get("company_name", ticker),
+                direction=signal_data.get("direction", "bullish"),
+                catalyst_type=signal_data.get("catalyst_type", ""),
+                reasoning=signal_data.get("reasoning", ""),
+                event_headline=signal_data.get("event_headline", ""),
+                last_price=last_price,
+                provider=provider,
+                model=model,
+            )
+        except Exception as exc:
+            logger.exception("Speculation signal playbook generation failed")
+            return html.Div(f"Playbook generation failed: {exc}",
+                            style={"color": "#EF4444"})
+
         return _format_playbook(playbook)
 
     # ── Execute (Paper) flow ──────────────────────────────────────────
@@ -599,7 +728,7 @@ def register_scanner_callbacks(app):
                 style={"color": "#F59E0B"},
             )
 
-        cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "")
+        cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", SCANNER_STATE.scan_id())
         if cached is None:
             return False, no_update, None, html.Div(
                 "No playbook in memory. Click Generate Playbook first.",
@@ -708,7 +837,7 @@ def register_scanner_callbacks(app):
         symbol = pending.get("symbol")
         strategy_id = pending.get("strategy_id")
         model = pending.get("model", "")
-        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model)
+        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model, SCANNER_STATE.scan_id())
         if playbook is None:
             return False, html.Div(
                 "Playbook expired from memory — re-generate before executing.",
@@ -1131,7 +1260,7 @@ def register_scanner_callbacks(app):
         symbol = row.get("symbol", "")
         strategy_id = row.get("strategy_id", "")
         strategy_name = row.get("strategy_name", strategy_id)
-        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "")
+        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", SCANNER_STATE.scan_id())
         if playbook is None:
             return False, "Playbook not found in memory — re-generate first.", ""
         summary = html.Div([
@@ -1180,7 +1309,7 @@ def register_scanner_callbacks(app):
         symbol = row.get("symbol", "")
         strategy_id = row.get("strategy_id", "")
         strategy_name = row.get("strategy_name", strategy_id)
-        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "")
+        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", SCANNER_STATE.scan_id())
         if playbook is None:
             return False, html.Div(
                 "Playbook expired from memory — re-generate before saving.",
@@ -1286,7 +1415,7 @@ def register_scanner_callbacks(app):
         if not symbol or not strategy_id:
             return no_update, hidden, "", empty_state
 
-        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "")
+        playbook = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", SCANNER_STATE.scan_id())
         if playbook is None:
             return no_update, hidden, "", empty_state
 

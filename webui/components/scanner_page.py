@@ -22,6 +22,7 @@ PLAYBOOK_MODEL_OPTIONS: dict[str, list[dict]] = {
         {"label": "o4-mini", "value": "o4-mini"},
     ],
     "anthropic": [
+        {"label": "Claude Opus 4.8", "value": "claude-opus-4-8"},
         {"label": "Claude Opus 4.7", "value": "claude-opus-4-7"},
         {"label": "Claude Opus 4.6", "value": "claude-opus-4-6"},
         {"label": "Claude Sonnet 4.6", "value": "claude-sonnet-4-6"},
@@ -257,6 +258,67 @@ def _results_card():
                          style={"fontSize": "12px", "color": "#94A3B8",
                                 "marginBottom": "12px",
                                 "fontVariantNumeric": "tabular-nums"}),
+                html.Div(id="speculation-signal-banner", style={"marginBottom": "10px"}),
+                dcc.Store(id="speculation-clicked-signal"),
+                html.Div(id="spec-playbook-panel", style={"display": "none"}, children=[
+                    dbc.Card(
+                        dbc.CardBody([
+                            html.Div(id="spec-playbook-signal-header",
+                                     style={"marginBottom": "12px"}),
+                            dbc.Row([
+                                dbc.Col([
+                                    html.Label("Provider",
+                                               style={"fontSize": "11px", "color": "#94A3B8",
+                                                      "textTransform": "uppercase",
+                                                      "letterSpacing": "1px"}),
+                                    dcc.Dropdown(
+                                        id="spec-signal-llm-provider",
+                                        options=[
+                                            {"label": "OpenAI", "value": "openai"},
+                                            {"label": "Anthropic", "value": "anthropic"},
+                                        ],
+                                        value=PLAYBOOK_DEFAULT_PROVIDER,
+                                        clearable=False,
+                                        className="dark-dropdown",
+                                    ),
+                                ], xs=12, md=4),
+                                dbc.Col([
+                                    html.Label("Model",
+                                               style={"fontSize": "11px", "color": "#94A3B8",
+                                                      "textTransform": "uppercase",
+                                                      "letterSpacing": "1px"}),
+                                    dcc.Dropdown(
+                                        id="spec-signal-llm-model",
+                                        options=PLAYBOOK_MODEL_OPTIONS[PLAYBOOK_DEFAULT_PROVIDER],
+                                        value=PLAYBOOK_DEFAULT_MODEL,
+                                        clearable=False,
+                                        className="dark-dropdown",
+                                    ),
+                                ], xs=12, md=5),
+                                dbc.Col([
+                                    html.Div(style={"height": "22px"}),
+                                    dbc.Button(
+                                        [
+                                            html.Span("auto_awesome",
+                                                      className="material-symbols-outlined me-1",
+                                                      style={"fontSize": "16px",
+                                                             "verticalAlign": "middle"}),
+                                            "Generate Playbook",
+                                        ],
+                                        id="spec-signal-playbook-btn",
+                                        color="primary",
+                                        className="w-100",
+                                    ),
+                                ], xs=12, md=3),
+                            ], className="mb-3", align="start"),
+                            html.Div(id="spec-signal-playbook-output",
+                                     style={"fontSize": "13px", "color": "#94A3B8"}),
+                        ]),
+                        style={"backgroundColor": "rgba(124,58,237,0.06)",
+                               "border": "1px solid rgba(124,58,237,0.25)",
+                               "marginBottom": "12px"},
+                    ),
+                ]),
                 dash_table.DataTable(
                     id="scanner-results-table",
                     columns=[

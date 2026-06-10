@@ -464,7 +464,53 @@ h1, h2, h3, h4, h5, h6, .font-headline {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2394A3B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
 }
 
-/* dcc.Dropdown (react-select) — dark theme globally
+/* Dash 4.x CSS custom property overrides — dcc.Dropdown uses these vars.
+   Defaults are light-mode values (#fff bg, dark text) which are invisible
+   against the dark theme. Override all to dark equivalents. */
+body {
+    --Dash-Fill-Inverse-Strong: #0B1120;
+    --Dash-Text-Strong: #F1F5F9;
+    --Dash-Text-Weak: #94A3B8;
+    --Dash-Text-Disabled: #64748B;
+    --Dash-Text-Primary: #F1F5F9;
+    --Dash-Stroke-Strong: #334155;
+    --Dash-Stroke-Weak: rgba(51, 65, 85, 0.3);
+    --Dash-Fill-Interactive-Strong: #3B82F6;
+    --Dash-Fill-Interactive-Weak: rgba(59, 130, 246, 0.2);
+    --Dash-Fill-Disabled: rgba(51, 65, 85, 0.4);
+    --Dash-Fill-Primary-Hover: rgba(59, 130, 246, 0.15);
+    --Dash-Fill-Primary-Active: rgba(59, 130, 246, 0.25);
+    --Dash-Shading-Strong: rgba(0, 0, 0, 0.5);
+    --Dash-Shading-Weak: rgba(0, 0, 0, 0.3);
+}
+
+/* Explicit class overrides for Dash 4.x dcc.Dropdown dark theme */
+.dash-dropdown,
+.dash-dropdown-content {
+    background: #0B1120 !important;
+    color: #F1F5F9 !important;
+    border-color: #334155 !important;
+}
+
+.dash-dropdown-option {
+    background: #0B1120 !important;
+    color: #F1F5F9 !important;
+}
+
+.dash-dropdown-option:hover {
+    background: rgba(59, 130, 246, 0.15) !important;
+}
+
+.dash-dropdown-search {
+    color: #F1F5F9 !important;
+    background: transparent !important;
+}
+
+.dash-dropdown-placeholder {
+    color: #64748B !important;
+}
+
+/* dcc.Dropdown (react-select) — dark theme globally — legacy Dash 2.x/3.x
    Body-prefixed selectors outrank DARKLY's Bootstrap rules. Covers both the
    legacy single-dash class names (.Select-control, .Select-menu-outer, …)
    and any modern BEM-style variants (.Select__control, .Select__menu, …) so
