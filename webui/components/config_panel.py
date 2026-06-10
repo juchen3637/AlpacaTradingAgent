@@ -452,13 +452,14 @@ def create_config_panel():
                     dbc.Select(
                         id="anthropic-deep-llm",
                         options=[
+                            {"label": "claude-opus-4-8", "value": "claude-opus-4-8"},
                             {"label": "claude-opus-4-6", "value": "claude-opus-4-6"},
                             {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
                             {"label": "claude-opus-4-5", "value": "claude-opus-4-5"},
                             {"label": "claude-sonnet-4-5", "value": "claude-sonnet-4-5"},
                             {"label": "claude-3-5-sonnet-20241022", "value": "claude-3-5-sonnet-20241022"},
                         ],
-                        value="claude-opus-4-6",
+                        value="claude-opus-4-8",
                         className="mb-3"
                     ),
                 ]

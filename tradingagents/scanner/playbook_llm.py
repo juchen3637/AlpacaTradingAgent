@@ -140,6 +140,127 @@ def _format_user_prompt(snap: TickerSnapshot, strategy_id: str) -> str:
     return "\n".join(lines)
 
 
+def _format_speculation_prompt(
+    ticker: str,
+    company_name: str,
+    direction: str,
+    catalyst_type: str,
+    reasoning: str,
+    event_headline: str,
+    last_price: float,
+) -> str:
+    lines = [
+        f"Strategy: speculation_{direction}",
+        f"Strategy rules: Event-driven {direction} play — use news catalyst and current "
+        f"price to set entry, stop, and targets.",
+        "",
+        f"Ticker: {ticker} ({company_name})",
+        f"Asset class: stock",
+        f"Last price: {last_price}",
+        f"Catalyst type: {catalyst_type}",
+        f"Triggering event: {event_headline}",
+        "",
+        "Analysis:",
+        reasoning,
+        "",
+        "Note: Derive all entry/stop/target prices from the current last price. "
+        "For bullish plays use Buy Stop or Buy Market. "
+        "For bearish plays model as a short-biased play with protective stop above price.",
+    ]
+    return "\n".join(lines)
+
+
+def _fallback_speculation_playbook(
+    ticker: str,
+    direction: str,
+    last_price: float,
+) -> Playbook:
+    price = last_price or 10.0
+    if direction == "bullish":
+        stop = round(price * 0.97, 2)
+        pt1 = round(price * 1.04, 2)
+        pt2 = round(price * 1.08, 2)
+        order_type = "Buy Stop"
+    else:
+        stop = round(price * 1.03, 2)
+        pt1 = round(price * 0.96, 2)
+        pt2 = round(price * 0.92, 2)
+        order_type = "Buy Market"
+    rr = round(abs(pt1 - price) / max(abs(price - stop), 0.01), 2)
+    return Playbook(
+        symbol=ticker,
+        strategy_id=f"speculation_{direction}",
+        thesis=f"Rule-based fallback: event-driven {direction} play on {ticker} at ${price:,.2f}.",
+        entry_trigger=f"Enter {'above' if direction == 'bullish' else 'below'} ${price:,.2f} on the news catalyst.",
+        entry_price=price,
+        order_type=order_type,
+        stop_loss=stop,
+        profit_target_1=pt1,
+        profit_target_2=pt2,
+        risk_reward=rr,
+        position_size_pct=0.03,
+        indicators_to_watch=("Price vs. entry", "Volume", "News flow"),
+        invalidation=f"Close {'below' if direction == 'bullish' else 'above'} ${stop:,.2f} invalidates the setup.",
+        confidence="low",
+        qualification_reason=f"Speculation signal on {ticker} — fallback playbook (LLM unavailable).",
+        confidence_reason="Low confidence: rule-based fallback without full signal analysis.",
+    )
+
+
+def generate_speculation_playbook(
+    ticker: str,
+    company_name: str,
+    direction: str,
+    catalyst_type: str,
+    reasoning: str,
+    event_headline: str,
+    last_price: float,
+    llm=None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Playbook:
+    """Generate an AI playbook from a speculation signal (no scanner snapshot required).
+
+    Uses current price + signal context. Falls back to rule-based playbook on failure.
+    """
+    try:
+        llm = llm or _get_llm(provider=provider, model=model)
+        structured = llm.with_structured_output(_PlaybookSchema)
+        user_prompt = _format_speculation_prompt(
+            ticker, company_name, direction, catalyst_type,
+            reasoning, event_headline, last_price,
+        )
+        result: Optional[_PlaybookSchema] = structured.invoke(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        if result is None:
+            raise ValueError("LLM returned None")
+        return Playbook(
+            symbol=ticker,
+            strategy_id=f"speculation_{direction}",
+            thesis=result.thesis,
+            entry_trigger=result.entry_trigger,
+            entry_price=float(result.entry_price),
+            order_type=result.order_type,
+            stop_loss=float(result.stop_loss),
+            profit_target_1=float(result.profit_target_1),
+            profit_target_2=float(result.profit_target_2),
+            risk_reward=float(result.risk_reward),
+            position_size_pct=float(result.position_size_pct),
+            indicators_to_watch=tuple(result.indicators_to_watch),
+            invalidation=result.invalidation,
+            confidence=result.confidence.lower(),
+            qualification_reason=result.qualification_reason,
+            confidence_reason=result.confidence_reason,
+        )
+    except Exception as exc:
+        logger.warning("Speculation playbook LLM failed for %s (%s) — returning fallback", ticker, exc)
+        return _fallback_speculation_playbook(ticker, direction, last_price)
+
+
 def _fallback_playbook(scan_result: ScanResult) -> Playbook:
     """Deterministic playbook used when the LLM path fails."""
     snap = scan_result.snapshot
