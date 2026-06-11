@@ -113,7 +113,10 @@ def _create_llm(model_name: str, provider: str, api_key: str = None):
     """
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(model=model_name, api_key=api_key, temperature=0.2)
+        anthropic_kwargs = {"model": model_name, "api_key": api_key}
+        if "claude-opus-4" not in model_name:
+            anthropic_kwargs["temperature"] = 0.2
+        return ChatAnthropic(**anthropic_kwargs)
 
     # Default: OpenAI
     kwargs = {}
@@ -364,17 +367,31 @@ class TradingAgentsGraph:
         if self.debug:
             # Debug mode with tracing
             trace = []
-            for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) == 0:
-                    pass
-                else:
-                    chunk["messages"][-1].pretty_print()
-                    trace.append(chunk)
-
+            try:
+                for chunk in self.graph.stream(init_agent_state, **args):
+                    if len(chunk["messages"]) == 0:
+                        pass
+                    else:
+                        chunk["messages"][-1].pretty_print()
+                        trace.append(chunk)
+            except Exception as stream_err:
+                print(f"[GRAPH] ❌ Graph stream failed for {company_name}: {stream_err}")
+                raise
             final_state = trace[-1]
         else:
             # Standard mode without tracing
-            final_state = self.graph.invoke(init_agent_state, **args)
+            try:
+                final_state = self.graph.invoke(init_agent_state, **args)
+            except Exception as invoke_err:
+                print(f"[GRAPH] ❌ Graph invoke failed for {company_name}: {invoke_err}")
+                # Return a safe fallback state so the caller gets a HOLD signal
+                # rather than crashing the entire market-hour loop.
+                fallback_state = dict(init_agent_state)
+                fallback_state["final_trade_decision"] = "HOLD"
+                fallback_state["graph_error"] = str(invoke_err)
+                self.curr_state = fallback_state
+                self._log_state(trade_date, fallback_state)
+                return fallback_state, "HOLD"
 
         # Store current state for reflection
         self.curr_state = final_state
