@@ -102,9 +102,10 @@ class TestCreateLlmAnthropic:
             _create_llm, _ = _import_factory()
             result = _create_llm("claude-opus-4-6", "anthropic", "ant-key")
 
-        mock_cls.assert_called_once_with(
-            model="claude-opus-4-6", api_key="ant-key", temperature=0.2
-        )
+        # Anthropic models omit temperature (not supported uniformly)
+        _, kwargs = mock_cls.call_args
+        assert kwargs["model"] == "claude-opus-4-6"
+        assert kwargs["api_key"] == "ant-key"
         assert result is mock_instance
 
 
@@ -114,13 +115,10 @@ class TestCreateLlmAnthropic:
 
 class TestGetRateLimitErrorTypes:
     def test_get_rate_limit_error_types_includes_openai(self):
-        """When tenacity is available, openai.RateLimitError must be in the tuple."""
+        """When openai is installed, its RateLimitError must appear in the tuple."""
         FakeOpenAIRateLimitError = type("RateLimitError", (Exception,), {})
-        mock_openai = MagicMock()
-        mock_openai.RateLimitError = FakeOpenAIRateLimitError
 
-        with patch("tradingagents.graph.trading_graph.TENACITY_AVAILABLE", True), \
-             patch("tradingagents.graph.trading_graph.openai", mock_openai), \
+        with patch("tradingagents.graph.trading_graph._OPENAI_RATE_LIMIT_ERROR", FakeOpenAIRateLimitError), \
              patch("tradingagents.graph.trading_graph._ANTHROPIC_RATE_LIMIT_ERROR", None):
             _, _get_rate_limit_error_types = _import_factory()
             result = _get_rate_limit_error_types()
@@ -128,23 +126,20 @@ class TestGetRateLimitErrorTypes:
         assert FakeOpenAIRateLimitError in result
 
     def test_get_rate_limit_error_types_includes_anthropic(self):
-        """When anthropic is installed, its RateLimitError must be in the tuple."""
+        """When anthropic is installed, its RateLimitError must appear in the tuple."""
         FakeOpenAIRateLimitError = type("RateLimitError", (Exception,), {})
         FakeAnthropicRateLimitError = type("RateLimitError", (Exception,), {})
-        mock_openai = MagicMock()
-        mock_openai.RateLimitError = FakeOpenAIRateLimitError
 
-        with patch("tradingagents.graph.trading_graph.TENACITY_AVAILABLE", True), \
-             patch("tradingagents.graph.trading_graph.openai", mock_openai), \
+        with patch("tradingagents.graph.trading_graph._OPENAI_RATE_LIMIT_ERROR", FakeOpenAIRateLimitError), \
              patch("tradingagents.graph.trading_graph._ANTHROPIC_RATE_LIMIT_ERROR", FakeAnthropicRateLimitError):
             _, _get_rate_limit_error_types = _import_factory()
             result = _get_rate_limit_error_types()
 
         assert FakeAnthropicRateLimitError in result
 
-    def test_get_rate_limit_error_types_fallback_when_tenacity_unavailable(self):
-        """When tenacity is unavailable the result should contain Exception as fallback."""
-        with patch("tradingagents.graph.trading_graph.TENACITY_AVAILABLE", False), \
+    def test_get_rate_limit_error_types_fallback_when_neither_available(self):
+        """When neither library is installed the result must be (Exception,)."""
+        with patch("tradingagents.graph.trading_graph._OPENAI_RATE_LIMIT_ERROR", None), \
              patch("tradingagents.graph.trading_graph._ANTHROPIC_RATE_LIMIT_ERROR", None):
             _, _get_rate_limit_error_types = _import_factory()
             result = _get_rate_limit_error_types()
@@ -178,11 +173,9 @@ class TestInvokeLlmWithRetry:
         mock_llm.invoke.return_value = "retry-response"
 
         FakeOpenAIRateLimitError = type("RateLimitError", (Exception,), {})
-        mock_openai = MagicMock()
-        mock_openai.RateLimitError = FakeOpenAIRateLimitError
 
         with patch("tradingagents.graph.trading_graph.TENACITY_AVAILABLE", True), \
-             patch("tradingagents.graph.trading_graph.openai", mock_openai), \
+             patch("tradingagents.graph.trading_graph._OPENAI_RATE_LIMIT_ERROR", FakeOpenAIRateLimitError), \
              patch("tradingagents.graph.trading_graph._ANTHROPIC_RATE_LIMIT_ERROR", None):
             result = invoke_llm_with_retry(mock_llm, ["msg"], max_attempts=1)
 
