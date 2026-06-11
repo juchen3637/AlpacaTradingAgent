@@ -287,6 +287,11 @@ def extract_conviction(text: str) -> float:
     if re.search(r"\b(very low|no)\s+(conviction|confidence)\b", lower):
         return 0.15
 
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "[CONVICTION] Extraction failed — no numeric/verbal conviction found; defaulting to 0.5 (neutral). "
+        "This may indicate a prompt-formatting issue. Check agent output for 'Conviction:' field."
+    )
     return 0.5
 
 
