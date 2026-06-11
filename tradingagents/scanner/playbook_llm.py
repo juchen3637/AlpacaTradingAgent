@@ -11,10 +11,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 
 from ._llm_factory import get_llm as _get_llm
-from .constants import STRATEGY_RULES
+from .constants import SHORT_STRATEGIES, STRATEGY_RULES
 from .models import Playbook, ScanResult, TickerSnapshot
 
 logger = logging.getLogger(__name__)
@@ -45,10 +47,11 @@ class _PlaybookSchema(BaseModel):
     order_type: str = Field(
         description=(
             "EXACTLY one of: 'Buy Stop', 'Buy Limit', 'Buy Stop-Limit', "
-            "'Buy Market'. Pick based on the entry condition: "
-            "breakouts above current price → 'Buy Stop'; pullbacks down to a "
-            "level → 'Buy Limit'; breakouts where slippage is a concern → "
-            "'Buy Stop-Limit'; immediate fill on signal → 'Buy Market'."
+            "'Buy Market', 'Sell Stop', 'Sell Limit', 'Sell Market'. "
+            "For LONG plays: breakout above current price → 'Buy Stop'; "
+            "pullback to a level → 'Buy Limit'; immediate fill → 'Buy Market'. "
+            "For SHORT plays: breakdown below current price → 'Sell Stop'; "
+            "rejection rally to a level → 'Sell Limit'; immediate short → 'Sell Market'."
         )
     )
     stop_loss: float = Field(description="Stop loss price, absolute dollars.")
@@ -60,6 +63,19 @@ class _PlaybookSchema(BaseModel):
         ge=0.0, le=1.0,
     )
     indicators_to_watch: list[str] = Field(description="Key indicators / levels.")
+
+    @field_validator("indicators_to_watch", mode="before")
+    @classmethod
+    def _coerce_indicators(cls, v):
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
     invalidation: str = Field(description="What makes this setup wrong.")
     confidence: str = Field(description="low | medium | high")
     qualification_reason: str = Field(
@@ -90,20 +106,26 @@ _SYSTEM_PROMPT = (
     "  ✓ 'Price climbs back above the average price line (VWAP reclaim).'\n"
     "  ✓ 'Today's trading volume is 5× the usual (RVOL 5).'\n"
     "  ✗ 'Break above $1.70.' (too jargony, no plain explanation)\n\n"
-    "ORDER TYPE RULE: `order_type` must match the entry intent exactly. "
-    "Breakout above current price → 'Buy Stop'. Pullback down to a level → "
-    "'Buy Limit'. Use 'Buy Stop-Limit' only if you want to cap slippage. "
-    "Use 'Buy Market' only when the trigger is right now.\n\n"
+    "LONG vs SHORT RULE: Check the strategy template.\n"
+    "  LONG strategies (ATH_BREAKOUT, ORB, VWAP_RECLAIM, SMA10_MACD, "
+    "LOW_FLOAT_HVD, LOW_FLOAT_L2, SPY_0DTE_FADE long side): "
+    "stop BELOW entry, targets ABOVE entry, use 'Buy *' order types.\n"
+    "  SHORT strategies (PDH_REJECTION, VWAP_FADE, BREAKDOWN): "
+    "stop ABOVE entry, targets BELOW entry, use 'Sell *' order types. "
+    "Entry is where you borrow and sell; profit if price falls.\n\n"
+    "ORDER TYPE RULE: match entry intent exactly.\n"
+    "  Long: breakdown → 'Buy Stop'; pullback → 'Buy Limit'; now → 'Buy Market'.\n"
+    "  Short: breakdown below level → 'Sell Stop'; rejection rally → 'Sell Limit'; "
+    "immediate short → 'Sell Market'.\n\n"
     "PRICE RULES: Stop and targets must be absolute dollar prices consistent "
-    "with the entry. `entry_price` is the single concrete trigger/limit "
-    "number used by chart tools.\n\n"
+    "with the entry and direction. For shorts: stop > entry > target.\n\n"
     "QUALIFICATION RULE: `qualification_reason` must cite the specific numbers "
     "from the snapshot that make this ticker fit THIS strategy. Examples:\n"
     "  ✓ 'Float is 8M (under the 20M cap for low-float setups), today's volume "
     "is 6× normal (RVOL 6.0), and price reclaimed the average price line at "
     "$1.85 (VWAP reclaim).'\n"
-    "  ✓ 'Price is within 2% of its 52-week high with heavy volume (RVOL 4.5) "
-    "and a fresh FDA catalyst — exactly what an ATH breakout needs.'\n"
+    "  ✓ 'Price rejected the previous-day high of $42.50 with RVOL 3.2 — "
+    "classic short setup (PDH rejection).'\n"
     "  ✗ 'This looks like a good setup.' (too generic, no numbers)\n\n"
     "CONFIDENCE RULE: `confidence_reason` must explain WHICH signals support or "
     "weaken the chosen level. Examples:\n"
@@ -265,32 +287,49 @@ def _fallback_playbook(scan_result: ScanResult) -> Playbook:
     """Deterministic playbook used when the LLM path fails."""
     snap = scan_result.snapshot
     price = snap.last_price
-    # Simple 1% stop / 2% and 4% targets — matches R:R of 2 and 4.
-    stop = round(price * 0.99, 2)
-    pt1 = round(price * 1.02, 2)
-    pt2 = round(price * 1.04, 2)
-    rr = round((pt1 - price) / max(price - stop, 0.01), 2)
+    is_short = scan_result.strategy_id in SHORT_STRATEGIES
     rvol_str = f"{snap.rvol:.1f}" if snap.rvol is not None else "n/a"
+
+    if is_short:
+        stop = round(price * 1.01, 2)
+        pt1 = round(price * 0.98, 2)
+        pt2 = round(price * 0.96, 2)
+        order_type = "Sell Stop"
+        entry_trigger = (
+            f"Short when the price falls through ${price:,.2f} on rising volume "
+            "(breakdown below the trigger price with confirming volume)."
+        )
+        invalidation = f"Close above ${stop:,.2f} invalidates the short setup."
+    else:
+        stop = round(price * 0.99, 2)
+        pt1 = round(price * 1.02, 2)
+        pt2 = round(price * 1.04, 2)
+        order_type = "Buy Stop"
+        entry_trigger = (
+            f"Buy when the price moves up through ${price:,.2f} on rising "
+            "volume (breakout above the trigger price with confirming volume)."
+        )
+        invalidation = f"Close below ${stop:,.2f} invalidates the setup."
+
+    rr = round(abs(pt1 - price) / max(abs(price - stop), 0.01), 2)
     return Playbook(
         symbol=snap.symbol,
         strategy_id=scan_result.strategy_id,
+        side="sell" if is_short else "buy",
         thesis=(
             f"Rule-based fallback: {scan_result.strategy_name} setup on {snap.symbol} "
             f"at ${price:,.2f}."
         ),
-        entry_trigger=(
-            f"Buy when the price moves up through ${price:,.2f} on rising "
-            "trading volume (breakout above the trigger price with confirming volume)."
-        ),
+        entry_trigger=entry_trigger,
         entry_price=round(price, 2),
-        order_type="Buy Stop",
+        order_type=order_type,
         stop_loss=stop,
         profit_target_1=pt1,
         profit_target_2=pt2,
         risk_reward=rr,
         position_size_pct=0.05,
         indicators_to_watch=("VWAP", "RVOL", "Price vs. PDH"),
-        invalidation=f"Close below ${stop:,.2f} invalidates the setup.",
+        invalidation=invalidation,
         confidence="low",
         qualification_reason=(
             f"Matched {scan_result.strategy_name} on {snap.symbol} at ${price:,.2f} "
@@ -330,9 +369,11 @@ def generate_playbook(
         )
         if result is None:
             raise ValueError("LLM returned None")
+        side = "sell" if result.order_type.lower().startswith("sell") else "buy"
         return Playbook(
             symbol=snap.symbol,
             strategy_id=strategy_id,
+            side=side,
             thesis=result.thesis,
             entry_trigger=result.entry_trigger,
             entry_price=float(result.entry_price),

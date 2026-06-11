@@ -104,6 +104,10 @@ def create_macro_analyst(llm, toolkit):
                 "- Focus on actionable EOD trading insights for overnight positioning\n"
             )
 
+            spec_ctx = state.get("speculation_context", "")
+            if spec_ctx:
+                system_message = system_message + f"\n\n{spec_ctx}"
+
             prompt = ChatPromptTemplate.from_messages(
                 [
                     (

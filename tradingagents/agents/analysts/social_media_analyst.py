@@ -59,6 +59,10 @@ Make sure to append a Markdown table organizing:
 Focus on actionable social sentiment insights for EOD trading decisions."""
         )
 
+        spec_ctx = state.get("speculation_context", "")
+        if spec_ctx:
+            system_message = system_message + f"\n\n{spec_ctx}"
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

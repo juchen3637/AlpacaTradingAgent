@@ -82,7 +82,10 @@ def _get_explainer_llm(provider: str, model: str):
         from langchain_anthropic import ChatAnthropic
 
         api_key = os.environ.get("ANTHROPIC_API_KEY") or DEFAULT_CONFIG.get("anthropic_api_key")
-        llm = ChatAnthropic(model=model, api_key=api_key, temperature=0.3, timeout=60)
+        ac_kwargs = {"model": model, "api_key": api_key, "timeout": 60}
+        if "claude-opus-4" not in model:
+            ac_kwargs["temperature"] = 0.3
+        llm = ChatAnthropic(**ac_kwargs)
         return llm.bind_tools([{
             "type": "web_search_20250305",
             "name": "web_search",

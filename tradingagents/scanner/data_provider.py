@@ -101,13 +101,16 @@ def _compute_intraday_metrics(
     # (Using running VWAP prevents uptrends from being flagged as "reclaims" — only real
     # cross-backs-above qualify.)
     vwap_reclaim = False
+    vwap_rejection = False
     if vwap is not None and len(session) >= 2 and total_vol > 0:
         cum_vol = vol.cumsum()
         cum_tv = (typical * vol).cumsum()
         running_vwap = cum_tv / cum_vol.replace(0, pd.NA)
-        dipped = bool((close < running_vwap).fillna(False).any())
         last_close = float(close.iloc[-1])
+        dipped = bool((close < running_vwap).fillna(False).any())
+        climbed = bool((close > running_vwap).fillna(False).any())
         vwap_reclaim = bool(dipped and last_close > vwap)
+        vwap_rejection = bool(climbed and last_close < vwap)
 
     opening_range_high: Optional[float] = None
     if len(session) >= 5:
@@ -121,6 +124,7 @@ def _compute_intraday_metrics(
     return {
         "vwap": vwap,
         "vwap_reclaim": vwap_reclaim,
+        "vwap_rejection": vwap_rejection,
         "opening_range_high": opening_range_high,
         "minutes_since_open": minutes_since_open,
     }
@@ -862,6 +866,18 @@ def _fetch_float_shares(symbol: str, week_key: str) -> Optional[float]:
         return None
 
 
+def has_catalyst(symbol: str) -> bool:
+    """Return True if a recent catalyst exists for this symbol.
+
+    Reuses the same cached _fetch_catalyst logic used by fetch_snapshot,
+    so calling this during the auto-scan scheduler won't generate redundant
+    Finnhub API calls when the manual scanner later runs on the same symbol.
+    """
+    today_key = f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}-v5"
+    result = _fetch_catalyst(symbol, False, today_key) or {}
+    return bool(result.get("has_catalyst", False))
+
+
 class AlpacaDataProvider:
     """Concrete DataProvider for the ScannerPipeline Protocol."""
 
@@ -927,6 +943,7 @@ class AlpacaDataProvider:
             macd_signal_cross=bool(metrics.get("macd_signal_cross", False)),
             float_shares=float_shares,
             vwap_reclaim=bool(intraday.get("vwap_reclaim", False)),
+            vwap_rejection=bool(intraday.get("vwap_rejection", False)),
             opening_range_high=intraday.get("opening_range_high"),
             minutes_since_open=intraday.get("minutes_since_open"),
             premarket_volume=None,

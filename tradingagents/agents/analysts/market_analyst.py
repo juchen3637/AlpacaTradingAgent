@@ -103,6 +103,10 @@ Make sure to append a Markdown table at the end with:
 Focus on actionable EOD trading insights, not generic market commentary."""
         )
 
+        spec_ctx = state.get("speculation_context", "")
+        if spec_ctx:
+            system_message = system_message + f"\n\n{spec_ctx}"
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

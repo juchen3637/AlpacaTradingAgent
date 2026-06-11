@@ -78,6 +78,10 @@ def create_fundamentals_analyst(llm, toolkit):
                 + " Make sure to append a Markdown table at the end organizing key overnight events, times, and potential price impact for EOD trading decisions."
             )
 
+            spec_ctx = state.get("speculation_context", "")
+            if spec_ctx:
+                system_message = system_message + f"\n\n{spec_ctx}"
+
             prompt = ChatPromptTemplate.from_messages(
                 [
                     (
@@ -89,7 +93,7 @@ def create_fundamentals_analyst(llm, toolkit):
                         " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
                         " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                         " You have access to the following tools: {tool_names}.\n{system_message}"
-                        "For your reference, the current date is {current_date}. " 
+                        "For your reference, the current date is {current_date}. "
                         + ("The cryptocurrency we want to analyze is {ticker}" if is_crypto else "The company we want to look at is {ticker}"),
                     ),
                     MessagesPlaceholder(variable_name="messages"),
