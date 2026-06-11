@@ -74,16 +74,29 @@ def _make_client_order_id(strategy_id: str) -> str:
 
 def _validate(playbook: Playbook) -> Optional[str]:
     """Return None if the playbook is internally consistent, else error string."""
-    if playbook.stop_loss >= playbook.entry_price:
-        return (
-            f"Stop loss (${playbook.stop_loss:.2f}) must be below entry price "
-            f"(${playbook.entry_price:.2f}) for a long playbook."
-        )
-    if playbook.profit_target_1 <= playbook.entry_price:
-        return (
-            f"Profit target 1 (${playbook.profit_target_1:.2f}) must be above "
-            f"entry price (${playbook.entry_price:.2f}) for a long playbook."
-        )
+    is_short = getattr(playbook, "side", "buy") == "sell"
+    if is_short:
+        if playbook.stop_loss <= playbook.entry_price:
+            return (
+                f"Stop loss (${playbook.stop_loss:.2f}) must be above entry price "
+                f"(${playbook.entry_price:.2f}) for a short playbook."
+            )
+        if playbook.profit_target_1 >= playbook.entry_price:
+            return (
+                f"Profit target 1 (${playbook.profit_target_1:.2f}) must be below "
+                f"entry price (${playbook.entry_price:.2f}) for a short playbook."
+            )
+    else:
+        if playbook.stop_loss >= playbook.entry_price:
+            return (
+                f"Stop loss (${playbook.stop_loss:.2f}) must be below entry price "
+                f"(${playbook.entry_price:.2f}) for a long playbook."
+            )
+        if playbook.profit_target_1 <= playbook.entry_price:
+            return (
+                f"Profit target 1 (${playbook.profit_target_1:.2f}) must be above "
+                f"entry price (${playbook.entry_price:.2f}) for a long playbook."
+            )
     return None
 
 
@@ -137,8 +150,43 @@ def execute_playbook_paper(
             ),
         )
 
+    # Safety gate — same deterministic checks applied to all order paths
+    try:
+        from tradingagents.safety_gate import check_order
+        from tradingagents.default_config import DEFAULT_CONFIG
+        try:
+            open_pos = AlpacaUtils.get_positions_data() or []
+        except Exception:
+            open_pos = []
+        signal = "SHORT" if getattr(playbook, "side", "buy") == "sell" else "BUY"
+        dollar_amount = qty * playbook.entry_price
+        gate = check_order(
+            symbol=playbook.symbol,
+            signal=signal,
+            proposed_size_dollars=dollar_amount,
+            entry_price=playbook.entry_price,
+            stop_loss=playbook.stop_loss,
+            take_profit=[playbook.profit_target_1],
+            account_info=account,
+            open_positions_count=len(open_pos),
+            config=DEFAULT_CONFIG,
+        )
+        if not gate.passed:
+            logger.warning("[GATE] Scanner order blocked for %s: %s", playbook.symbol, gate.reason)
+            return ExecutionResult(success=False, error=f"Safety gate blocked: {gate.reason}")
+        if gate.adjusted_size is not None:
+            adjusted_qty = int(gate.adjusted_size / playbook.entry_price)
+            if adjusted_qty > 0:
+                logger.warning("[GATE] Scanner qty adjusted %d → %d for %s", qty, adjusted_qty, playbook.symbol)
+                qty = adjusted_qty
+    except ExecutionResult:
+        raise
+    except Exception as gate_err:
+        logger.warning("[GATE] Scanner gate check failed (%s); proceeding without gate", gate_err)
+
     client_order_id = _make_client_order_id(playbook.strategy_id)
 
+    is_short = getattr(playbook, "side", "buy") == "sell"
     submission = AlpacaUtils.submit_scanner_bracket_order(
         symbol=playbook.symbol,
         entry_price=playbook.entry_price,
@@ -147,6 +195,7 @@ def execute_playbook_paper(
         qty=qty,
         order_type=playbook.order_type,
         client_order_id=client_order_id,
+        side="sell" if is_short else "buy",
     )
 
     if not submission.get("success"):
@@ -163,7 +212,7 @@ def execute_playbook_paper(
         record = DecisionRecord(
             ticker=playbook.symbol,
             trade_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            signal="BUY",
+            signal="SELL SHORT" if is_short else "BUY",
             trader_plan=playbook.thesis,
             final_decision=(
                 f"Scanner {playbook.strategy_id} {playbook.order_type} bracket: "
