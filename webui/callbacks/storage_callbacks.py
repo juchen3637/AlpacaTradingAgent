@@ -11,7 +11,8 @@ def register_storage_callbacks(app):
     # Callback to load settings from localStorage on page load
     @app.callback(
         [
-            Output("ticker-input", "value"),
+            Output("ticker-input", "value", allow_duplicate=False),
+            Output("ai-picked-stocks", "value"),
             Output("analyst-market", "value"),
             Output("analyst-social", "value"),
             Output("analyst-news", "value"),
@@ -40,6 +41,7 @@ def register_storage_callbacks(app):
             defaults = get_default_settings()
             return [
                 defaults["ticker_input"],
+                defaults.get("ai_picked_stocks", False),
                 defaults["analyst_market"],
                 defaults["analyst_social"],
                 defaults["analyst_news"],
@@ -62,6 +64,7 @@ def register_storage_callbacks(app):
 
         return [
             stored_settings.get("ticker_input", "NVDA, AMD, TSLA"),
+            stored_settings.get("ai_picked_stocks", False),
             stored_settings.get("analyst_market", True),
             stored_settings.get("analyst_social", True),
             stored_settings.get("analyst_news", True),
@@ -87,6 +90,7 @@ def register_storage_callbacks(app):
         Output("settings-store", "data"),
         [
             Input("ticker-input", "value"),
+            Input("ai-picked-stocks", "value"),
             Input("analyst-market", "value"),
             Input("analyst-social", "value"),
             Input("analyst-news", "value"),
@@ -113,7 +117,7 @@ def register_storage_callbacks(app):
         ],
         prevent_initial_call=True
     )
-    def save_settings(ticker_input, analyst_market, analyst_social, analyst_news,
+    def save_settings(ticker_input, ai_picked_stocks, analyst_market, analyst_social, analyst_news,
                      analyst_fundamentals, analyst_macro, parallel_analysts, research_depth, allow_shorts,
                      loop_interval, market_hours_input,
                      trade_after_analyze, trade_dollar_amount, ai_position_sizing, quick_llm, deep_llm,
@@ -127,6 +131,7 @@ def register_storage_callbacks(app):
         
         new_settings = {
             "ticker_input": ticker_input,
+            "ai_picked_stocks": ai_picked_stocks,
             "analyst_market": analyst_market,
             "analyst_social": analyst_social,
             "analyst_news": analyst_news,

@@ -24,6 +24,13 @@ class _ScannerState:
         self._last_scan_ts: Optional[float] = None
         self._scan_id: int = 0
         self._playbooks: OrderedDict[tuple, tuple[float, Playbook]] = OrderedDict()
+        self.cancel_flag = threading.Event()
+
+    def request_cancel(self) -> None:
+        self.cancel_flag.set()
+
+    def reset_cancel(self) -> None:
+        self.cancel_flag.clear()
 
     # ─── scan results ──────────────────────────────────────────────────
 

@@ -332,6 +332,7 @@ def create_journal_page():
             duration=4000,
             icon="success",
             style={"position": "fixed", "top": 80, "right": 20,
-                   "minWidth": "320px", "zIndex": 1100},
+                   "minWidth": "min(320px, calc(100vw - 40px))",
+                   "maxWidth": "calc(100vw - 40px)", "zIndex": 1100},
         ),
     ])

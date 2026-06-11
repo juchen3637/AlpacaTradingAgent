@@ -21,6 +21,20 @@ def create_config_panel():
                 ],
                 style={"display": "flex", "alignItems": "center", "marginBottom": "16px"},
             ),
+            html.H5("AI Picked Stocks:", className="mt-3"),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Switch(
+                        id="ai-picked-stocks",
+                        label="Enable AI-Discovered Tickers",
+                        value=False,
+                        className="mb-2"
+                    ),
+                ], xs=12, sm=6),
+                dbc.Col([
+                    html.Div(id="ai-picked-stocks-info", className="mb-3"),
+                ], xs=12, sm=6),
+            ]),
             html.H5("Select Analysts:", className="mt-3"),
             dbc.Row([
                 dbc.Col([
@@ -440,6 +454,8 @@ def create_config_panel():
                     dbc.Select(
                         id="anthropic-quick-llm",
                         options=[
+                            {"label": "claude-opus-4-8", "value": "claude-opus-4-8"},
+                            {"label": "claude-opus-4-7", "value": "claude-opus-4-7"},
                             {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
                             {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
                             {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
@@ -453,6 +469,7 @@ def create_config_panel():
                         id="anthropic-deep-llm",
                         options=[
                             {"label": "claude-opus-4-8", "value": "claude-opus-4-8"},
+                            {"label": "claude-opus-4-7", "value": "claude-opus-4-7"},
                             {"label": "claude-opus-4-6", "value": "claude-opus-4-6"},
                             {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
                             {"label": "claude-opus-4-5", "value": "claude-opus-4-5"},

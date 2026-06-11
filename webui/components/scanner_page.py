@@ -70,6 +70,155 @@ def _section_header(icon: str, title: str, subtitle: str = ""):
     )
 
 
+def _auto_scans_section():
+    """AUTO SCANS accordion — fires automatically before and at market open."""
+    _tbl_style_cell = {
+        "backgroundColor": "#1E293B",
+        "color": "#F1F5F9",
+        "fontFamily": "'Inter', sans-serif",
+        "fontSize": "13px",
+        "fontVariantNumeric": "tabular-nums",
+        "border": "1px solid #334155",
+        "padding": "10px",
+    }
+    _tbl_style_header = {
+        "backgroundColor": "#0F172A",
+        "color": "#94A3B8",
+        "fontWeight": "700",
+        "textTransform": "uppercase",
+        "fontSize": "11px",
+        "letterSpacing": "1px",
+    }
+    return dbc.Card(
+        dbc.CardBody([
+            _section_header(
+                "schedule",
+                "AUTO SCANS",
+                "Pre-market movers fire at 8:00 AM ET · Market-open leaders fire at 9:45 AM ET.",
+            ),
+            dbc.Accordion([
+                dbc.AccordionItem(
+                    [
+                        html.Div(
+                            id="auto-scan-premarket-status",
+                            style={"fontSize": "12px", "color": "#94A3B8",
+                                   "marginBottom": "10px"},
+                            children="Runs automatically at 8:00 AM ET on market days.",
+                        ),
+                        dash_table.DataTable(
+                            id="auto-scan-premarket-table",
+                            columns=[
+                                {"name": "Symbol", "id": "symbol"},
+                                {"name": "Pre-Mkt Chg%", "id": "premarket_pct",
+                                 "type": "numeric", "format": {"specifier": "+,.2f"}},
+                                {"name": "Volume", "id": "premarket_volume",
+                                 "type": "numeric", "format": {"specifier": ",.0f"}},
+                                {"name": "Prev Close", "id": "prev_close",
+                                 "type": "numeric", "format": {"specifier": ",.2f"}},
+                                {"name": "Catalyst", "id": "catalyst"},
+                            ],
+                            data=[],
+                            row_selectable="single",
+                            selected_rows=[],
+                            page_size=20,
+                            style_table={"overflowX": "auto"},
+                            style_cell=_tbl_style_cell,
+                            style_header=_tbl_style_header,
+                            style_data_conditional=[
+                                {"if": {"filter_query": "{premarket_pct} > 0",
+                                        "column_id": "premarket_pct"},
+                                 "color": "#22C55E"},
+                                {"if": {"filter_query": "{premarket_pct} < 0",
+                                        "column_id": "premarket_pct"},
+                                 "color": "#EF4444"},
+                                {"if": {"filter_query": '{catalyst} = "YES"',
+                                        "column_id": "catalyst"},
+                                 "color": "#F59E0B", "fontWeight": "700"},
+                                {"if": {"filter_query": '{catalyst} = "NO"',
+                                        "column_id": "catalyst"},
+                                 "color": "#64748B"},
+                            ],
+                        ),
+                    ],
+                    title=html.Span(
+                        [
+                            html.Span("trending_up",
+                                      className="material-symbols-outlined me-2",
+                                      style={"fontSize": "16px", "verticalAlign": "middle",
+                                             "color": "#F59E0B"}),
+                            "PRE-MARKET MOVERS",
+                        ],
+                        style={"fontFamily": "'Space Grotesk', sans-serif",
+                               "fontWeight": "700", "fontSize": "13px",
+                               "letterSpacing": "0.5px"},
+                    ),
+                ),
+                dbc.AccordionItem(
+                    [
+                        html.Div(
+                            id="auto-scan-market-open-status",
+                            style={"fontSize": "12px", "color": "#94A3B8",
+                                   "marginBottom": "10px"},
+                            children="Runs automatically at 9:45 AM ET on market days.",
+                        ),
+                        dash_table.DataTable(
+                            id="auto-scan-market-open-table",
+                            columns=[
+                                {"name": "Symbol", "id": "symbol"},
+                                {"name": "Price", "id": "last_price",
+                                 "type": "numeric", "format": {"specifier": ",.2f"}},
+                                {"name": "Chg%", "id": "change_pct",
+                                 "type": "numeric", "format": {"specifier": "+,.2f"}},
+                                {"name": "RVOL", "id": "rvol",
+                                 "type": "numeric", "format": {"specifier": ",.2f"}},
+                                {"name": "Volume", "id": "today_volume",
+                                 "type": "numeric", "format": {"specifier": ",.0f"}},
+                                {"name": "Catalyst", "id": "catalyst"},
+                                {"name": "Strategy", "id": "strategy_name"},
+                                {"name": "Score", "id": "score",
+                                 "type": "numeric", "format": {"specifier": ",.3f"}},
+                            ],
+                            data=[],
+                            row_selectable="single",
+                            selected_rows=[],
+                            page_size=20,
+                            style_table={"overflowX": "auto"},
+                            style_cell=_tbl_style_cell,
+                            style_header=_tbl_style_header,
+                            style_data_conditional=[
+                                {"if": {"filter_query": "{change_pct} > 0",
+                                        "column_id": "change_pct"},
+                                 "color": "#22C55E"},
+                                {"if": {"filter_query": "{change_pct} < 0",
+                                        "column_id": "change_pct"},
+                                 "color": "#EF4444"},
+                                {"if": {"column_id": "catalyst"},
+                                 "color": "#60A5FA"},
+                                {"if": {"column_id": "catalyst",
+                                        "filter_query": '{catalyst} = "—"'},
+                                 "color": "#64748B"},
+                            ],
+                        ),
+                    ],
+                    title=html.Span(
+                        [
+                            html.Span("bar_chart",
+                                      className="material-symbols-outlined me-2",
+                                      style={"fontSize": "16px", "verticalAlign": "middle",
+                                             "color": "#3B82F6"}),
+                            "MARKET OPEN LEADERS",
+                        ],
+                        style={"fontFamily": "'Space Grotesk', sans-serif",
+                               "fontWeight": "700", "fontSize": "13px",
+                               "letterSpacing": "0.5px"},
+                    ),
+                ),
+            ], start_collapsed=True, always_open=True),
+        ]),
+        style={"marginBottom": "16px"},
+    )
+
+
 def _filters_card():
     return dbc.Card(
         dbc.CardBody(
@@ -231,6 +380,20 @@ def _filters_card():
                                     id="scanner-run-btn",
                                     color="primary",
                                     className="w-100",
+                                ),
+                                dbc.Button(
+                                    [
+                                        html.Span(
+                                            "stop_circle",
+                                            className="material-symbols-outlined me-1",
+                                            style={"fontSize": "18px", "verticalAlign": "middle"},
+                                        ),
+                                        "Stop",
+                                    ],
+                                    id="scanner-stop-btn",
+                                    color="danger",
+                                    className="w-100 mt-2",
+                                    style={"display": "none"},
                                 ),
                             ],
                             xs=12, md=3,
@@ -880,6 +1043,7 @@ def create_scanner_page():
             dcc.Store(id="scanner-pending-execution"),
             dcc.Store(id="scanner-order-state", data={"unfilled_count": 0,
                                                        "has_position": False}),
+            _auto_scans_section(),
             _filters_card(),
             _results_card(),
             _playbook_card(),

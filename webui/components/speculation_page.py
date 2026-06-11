@@ -17,14 +17,19 @@ from webui.components.scanner_page import (
 
 SPECULATION_MODEL_OPTIONS: dict[str, list[dict]] = {
     "openai": [
-        {"label": "GPT-5 mini", "value": "gpt-5-mini-2025-08-07"},
         {"label": "GPT-5 (deep)", "value": "gpt-5"},
+        {"label": "GPT-5 mini", "value": "gpt-5-mini-2025-08-07"},
+        {"label": "GPT-5 nano", "value": "gpt-5-nano"},
         {"label": "GPT-4o", "value": "gpt-4o"},
         {"label": "GPT-4o mini", "value": "gpt-4o-mini"},
+        {"label": "o3", "value": "o3"},
+        {"label": "o4-mini", "value": "o4-mini"},
     ],
     "anthropic": [
-        {"label": "Claude Sonnet 4.6", "value": "claude-sonnet-4-6"},
+        {"label": "Claude Opus 4.8", "value": "claude-opus-4-8"},
+        {"label": "Claude Opus 4.7", "value": "claude-opus-4-7"},
         {"label": "Claude Opus 4.6", "value": "claude-opus-4-6"},
+        {"label": "Claude Sonnet 4.6", "value": "claude-sonnet-4-6"},
         {"label": "Claude Haiku 4.5", "value": "claude-haiku-4-5-20251001"},
     ],
 }
@@ -87,7 +92,7 @@ def _controls_card():
                         clearable=False,
                         className="dark-dropdown",
                     ),
-                ], width=3),
+                ], xs=12, md=3),
                 dbc.Col([
                     html.Label("Model", style={"fontSize": "12px", "color": "#94A3B8",
                                                "marginBottom": "4px"}),
@@ -98,7 +103,7 @@ def _controls_card():
                         clearable=False,
                         className="dark-dropdown",
                     ),
-                ], width=4),
+                ], xs=12, md=4),
                 dbc.Col([
                     html.Div(style={"height": "24px"}),
                     dbc.Button(
@@ -112,7 +117,7 @@ def _controls_card():
                         style={"backgroundColor": "#7C3AED", "borderColor": "#7C3AED",
                                "fontWeight": "600"},
                     ),
-                ], width=5),
+                ], xs=12, md=5),
             ]),
             html.Div(id="speculation-scan-status",
                      style={"marginTop": "10px", "fontSize": "12px", "color": "#94A3B8"}),
@@ -236,6 +241,7 @@ def create_speculation_page() -> html.Div:
     return html.Div([
         dcc.Store(id="speculation-results-store", data=[]),
         dcc.Store(id="spec-deep-dive-signal"),
+        dcc.Interval(id="speculation-refresh-interval", interval=3000, n_intervals=0),
         _deep_dive_modal(),
         html.Div(
             [_controls_card()],

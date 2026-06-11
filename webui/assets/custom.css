@@ -3127,3 +3127,53 @@ body .Select__multi-value__remove:hover {
         min-height: 44px;
     }
 }
+
+/* ── PR #35: Speculation tab mobile compatibility ──────────────────────────── */
+
+/* Touch targets: spec chip buttons and per-card deep dive buttons */
+.spec-chip {
+    min-height: 32px;
+}
+
+.spec-deep-dive-card-btn {
+    min-height: 32px;
+}
+
+@media (pointer: coarse) {
+    .spec-chip,
+    .spec-deep-dive-card-btn {
+        min-height: 44px;
+        padding: 6px 12px !important;
+        font-size: 12px !important;
+    }
+}
+
+/* Scanner and long-term chart height on mobile */
+@media (max-width: 767.98px) {
+    #scanner-chart,
+    #lt-chart {
+        height: 300px !important;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #scanner-chart,
+    #lt-chart {
+        height: 250px !important;
+    }
+
+    /* Trading sub-tabs horizontal scroll at narrowest viewports */
+    #trading-subtabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #trading-subtabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    #trading-subtabs .trading-subtab {
+        white-space: nowrap;
+    }
+}

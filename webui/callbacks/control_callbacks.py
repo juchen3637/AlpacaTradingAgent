@@ -116,8 +116,37 @@ def _run_market_hour_loop(symbols, config, hours):
         fire_hour = next_dt.hour if not run_now else now.hour
         print(f"[MARKET_HOUR] Running analysis at {fire_hour}:00 EST/EDT")
 
+        # ── AI Picked Stocks: discover at 9/12/15 EST, reuse cached picks otherwise ──
+        effective_symbols = list(symbols)
+        if config.get('ai_picked_stocks'):
+            from webui.utils.ai_picks import AI_PICKS_STATE, discover_ai_tickers, merge_tickers, publish_plays_to_speculation_state
+            from webui.utils.speculation_state import SPECULATION_STATE
+            fire_now = datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern)
+            if AI_PICKS_STATE.should_rediscover(fire_now):
+                app_state.ai_picks_status = "discovering"
+                SPECULATION_STATE.set_scanning(True)
+                source_label = f"market-hour {fire_hour}:00"
+                merged, ai_only, ai_plays = discover_ai_tickers(
+                    config.get('llm_provider', 'openai'),
+                    config.get('quick_llm'),
+                    symbols,
+                )
+                AI_PICKS_STATE.set_tickers(
+                    ai_only, hour=fire_hour, date=fire_now.date().isoformat()
+                )
+                effective_symbols = merged
+                app_state.ai_discovered_tickers = effective_symbols
+                app_state.ai_picks_status = ai_only if ai_only else None
+                app_state.ai_picks_source = source_label
+                publish_plays_to_speculation_state(ai_plays, source_label)
+                print(f"[AI_PICKS] Discovered {len(ai_only)} AI ticker(s) at {fire_hour}:00: {ai_only}")
+            else:
+                cached = AI_PICKS_STATE.get_tickers()
+                effective_symbols = merge_tickers(symbols, cached)
+                print(f"[AI_PICKS] Reusing {len(cached)} cached AI ticker(s) at {fire_hour}:00: {cached}")
+
         app_state.reset_for_loop()
-        for symbol in symbols:
+        for symbol in effective_symbols:
             app_state.init_symbol_state(symbol)
 
         # ── Phase 3: per-ticker re-analysis cooldown ──
@@ -133,7 +162,7 @@ def _run_market_hour_loop(symbols, config, hours):
         }
         eligible: list[str] = []
         skipped: list[str] = []
-        for sym in symbols:
+        for sym in effective_symbols:
             try:
                 snapshot = AlpacaUtils.get_position_snapshot(sym) or {}
                 cur_price = snapshot.get("current_price") or None
@@ -551,27 +580,42 @@ def register_control_callbacks(app):
             ])
 
     @app.callback(
-        Output("control-button-container", "children"),
+        [Output("control-btn", "color"),
+         Output("control-btn", "children")],
         [Input("refresh-interval", "n_intervals")]
     )
     def update_control_button(n_intervals):
-        """Update the control button (Start/Stop) based on current state"""
+        """Update the control button label/color based on current state (in-place, no remount)."""
         if app_state.analysis_running or app_state.loop_enabled or app_state.market_hour_enabled:
-            return dbc.Button(
+            return "danger", [
+                html.Span("stop", className="material-symbols-outlined me-1",
+                          style={"fontSize": "18px", "verticalAlign": "middle"}),
                 "Stop Analysis",
-                id="control-btn",
-                color="danger",
-                size="lg",
-                className="w-100 mt-2"
-            )
-        else:
-            return dbc.Button(
-                "Start Analysis",
-                id="control-btn",
-                color="primary",
-                size="lg",
-                className="w-100 mt-2"
-            )
+            ]
+        return "primary", [
+            html.Span("play_arrow", className="material-symbols-outlined me-1",
+                      style={"fontSize": "18px", "verticalAlign": "middle"}),
+            "Start Analysis",
+        ]
+
+    @app.callback(
+        Output("ai-picked-stocks-info", "children"),
+        [Input("ai-picked-stocks", "value")]
+    )
+    def update_ai_picked_stocks_info(enabled):
+        """Update the AI Picked Stocks information display"""
+        if not enabled:
+            return ""
+        return html.Div([
+            html.Strong("AI Picked Stocks Enabled", style={"color": "#0d6efd"}),
+            html.P(
+                "The Speculation engine discovers tickers before analysis and merges them "
+                "with your manual list (high/medium confidence only, max 25 total). "
+                "In Market Hour mode, discovery runs at 9 AM, 12 PM, and 3 PM EST; "
+                "other hours reuse the latest picks.",
+                className="mb-0 small text-muted"
+            ),
+        ], className="border rounded p-2", style={"backgroundColor": "#e7f1ff"})
 
     @app.callback(
         Output("trading-mode-info", "children"),
@@ -768,6 +812,7 @@ def register_control_callbacks(app):
         [Input("control-btn", "n_clicks"),
          Input("control-btn", "children")],
         [State("ticker-input", "value"),
+         State("speculation-tickers", "value"),
          State("analyst-market", "value"),
          State("analyst-social", "value"),
          State("analyst-news", "value"),
@@ -799,9 +844,10 @@ def register_control_callbacks(app):
          State("exit-adverse-move-pct", "value"),
          State("health-check-mode-for-held", "value"),
          State("per-ticker-cooldown-hours", "value"),
-         State("min-price-move-reanalysis-pct", "value")]
+         State("min-price-move-reanalysis-pct", "value"),
+         State("ai-picked-stocks", "value")]
     )
-    def on_control_button_click(n_clicks, button_children, tickers, analysts_market, analysts_social, analysts_news,
+    def on_control_button_click(n_clicks, button_children, tickers, speculation_tickers, analysts_market, analysts_social, analysts_news,
                                analysts_fundamentals, analysts_macro, research_depth, quick_llm, deep_llm,
                                allow_shorts, loop_enabled, loop_interval, trade_enabled, trade_amount, use_ai_sizing,
                                use_stop_loss, use_take_profit, use_bracket_orders,
@@ -810,7 +856,7 @@ def register_control_callbacks(app):
                                respect_brackets_when_held, position_age_min_hold_hours,
                                exit_conviction_threshold, exit_adverse_move_pct,
                                health_check_mode_for_held, per_ticker_cooldown_hours,
-                               min_price_move_reanalysis_pct):
+                               min_price_move_reanalysis_pct, ai_picked_stocks):
         """Handle control button clicks"""
         # Detect which property triggered this callback
         triggered_prop = None
@@ -851,8 +897,11 @@ def register_control_callbacks(app):
         if app_state.analysis_running:
             return "Analysis already in progress. Please wait.", dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
         
-        symbols = [s.strip().upper() for s in tickers.split(',') if s.strip()]
-        if not symbols:
+        watchlist_syms = [s.strip().upper() for s in (tickers or "").split(',') if s.strip()]
+        spec_syms = [s.strip().upper() for s in (speculation_tickers or "").split(',') if s.strip()]
+        from webui.utils.ai_picks import merge_tickers as _merge_tickers
+        symbols = _merge_tickers(watchlist_syms, spec_syms)
+        if not symbols and not ai_picked_stocks:
             return "Please enter at least one stock symbol.", {}, 1, 1, 1, 1
 
         if not app_state.analysis_running:
@@ -924,7 +973,7 @@ def register_control_callbacks(app):
                 return f"Invalid market hours: {error_msg}", {}, 1, 1, 1, 1
             market_hour_start, market_hour_end = market_hours_range
         
-        num_symbols = len(symbols)
+        num_symbols = max(len(symbols), 1)
 
         # Resolve effective LLM provider and model names
         llm_provider = llm_provider or "openai"
@@ -948,11 +997,39 @@ def register_control_callbacks(app):
         app_state.batch_size = batch_size
         app_state.batch_delay = batch_delay
 
-        # Initialize symbol states IMMEDIATELY so pagination works right away
-        for symbol in symbols:
-            app_state.init_symbol_state(symbol)
+        # When AI picks discovery is enabled, defer symbol init until after discovery
+        # so the UI doesn't show watchlist tickers as queued while speculation is running.
+        # For all other modes, init immediately so pagination is ready.
+        _discovery_pending = ai_picked_stocks and not market_hour_enabled
+        if not _discovery_pending:
+            for symbol in symbols:
+                app_state.init_symbol_state(symbol)
 
         def analysis_thread():
+            run_symbols = symbols
+            if ai_picked_stocks and not market_hour_enabled:
+                from webui.utils.ai_picks import discover_ai_tickers, publish_plays_to_speculation_state
+                from webui.utils.speculation_state import SPECULATION_STATE
+                app_state.ai_picks_status = "discovering"
+                SPECULATION_STATE.set_scanning(True)
+                merged, ai_only, ai_plays = discover_ai_tickers(llm_provider, effective_quick_llm, symbols)
+                if merged:
+                    print(f"[AI_PICKS] Added {len(ai_only)} AI-picked ticker(s): {ai_only}")
+                    run_symbols = merged
+                    app_state.ai_discovered_tickers = run_symbols
+                    app_state.ai_picks_status = ai_only if ai_only else None
+                    app_state.ai_picks_source = "analysis-start"
+                    publish_plays_to_speculation_state(ai_plays, "analysis-start")
+                    # Init all final symbols now (watchlist + AI picks) after discovery
+                    for sym in run_symbols:
+                        app_state.init_symbol_state(sym)
+                else:
+                    print("[AI_PICKS] No AI picks found and no manual tickers — stopping")
+                    app_state.ai_picks_status = None
+                    SPECULATION_STATE.set_scanning(False)
+                    app_state.analysis_running = False
+                    return
+
             if market_hour_enabled:
                 market_hour_config = {
                     'analysts_market': analysts_market,
@@ -970,6 +1047,7 @@ def register_control_callbacks(app):
                     'parallel_execution': parallel_execution,
                     'batch_size': batch_size,
                     'batch_delay': batch_delay,
+                    'ai_picked_stocks': ai_picked_stocks,
                     # Phase 5 — Position Management + Cost Controls
                     **app_state.exit_gate_config,
                     **app_state.cost_controls,
@@ -994,15 +1072,15 @@ def register_control_callbacks(app):
                     'trade_amount': trade_amount,
                     'parallel_execution': parallel_execution
                 }
-                app_state.start_loop(symbols, loop_config)
-                
+                app_state.start_loop(run_symbols, loop_config)
+
                 loop_iteration = 1
                 while not app_state.stop_loop:
                     print(f"[LOOP] Starting iteration {loop_iteration}")
 
                     # Run analysis for all symbols with parallel batch processing
                     process_symbols_in_parallel_batches(
-                        symbols,
+                        run_symbols,
                         analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
                         research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
                         batch_size=batch_size,
@@ -1031,9 +1109,9 @@ def register_control_callbacks(app):
                 print("[LOOP] Loop stopped")
             else:
                 # Single run mode with parallel batch processing
-                print(f"[SINGLE] Starting parallel batch analysis for {len(symbols)} symbols (batch_size={batch_size}, batch_delay={batch_delay}s)")
+                print(f"[SINGLE] Starting parallel batch analysis for {len(run_symbols)} symbols (batch_size={batch_size}, batch_delay={batch_delay}s)")
                 process_symbols_in_parallel_batches(
-                    symbols,
+                    run_symbols,
                     analysts_market, analysts_social, analysts_news, analysts_fundamentals, analysts_macro,
                     research_depth, allow_shorts, effective_quick_llm, effective_deep_llm, parallel_execution,
                     batch_size=batch_size,
@@ -1069,7 +1147,8 @@ def register_control_callbacks(app):
             "interval_text": interval_text
         }
         
-        return f"Starting real-time analysis for {', '.join(symbols)} in {mode_text}{interval_text} using current market data...", store_data, num_symbols, 1, num_symbols, 1
+        ai_note = " + AI-picked tickers" if ai_picked_stocks else ""
+        return f"Starting real-time analysis for {', '.join(symbols)}{ai_note} in {mode_text}{interval_text} using current market data...", store_data, num_symbols, 1, num_symbols, 1
 
     @app.callback(
         [Output("chart-pagination", "max_value", allow_duplicate=True),
@@ -1116,12 +1195,16 @@ def register_control_callbacks(app):
     def toggle_provider_sections(provider):
         """Show/hide model sections based on selected LLM provider."""
         quick_options = [
+            {"label": "claude-opus-4-8", "value": "claude-opus-4-8"},
+            {"label": "claude-opus-4-7", "value": "claude-opus-4-7"},
             {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
             {"label": "claude-haiku-4-5-20251001", "value": "claude-haiku-4-5-20251001"},
             {"label": "claude-haiku-4-5", "value": "claude-haiku-4-5"},
             {"label": "claude-3-5-haiku-20241022", "value": "claude-3-5-haiku-20241022"},
         ]
         deep_options = [
+            {"label": "claude-opus-4-8", "value": "claude-opus-4-8"},
+            {"label": "claude-opus-4-7", "value": "claude-opus-4-7"},
             {"label": "claude-opus-4-6", "value": "claude-opus-4-6"},
             {"label": "claude-sonnet-4-6", "value": "claude-sonnet-4-6"},
             {"label": "claude-opus-4-5", "value": "claude-opus-4-5"},
@@ -1131,6 +1214,23 @@ def register_control_callbacks(app):
         if provider == "anthropic":
             return {"display": "none"}, {"display": "block"}, quick_options, deep_options
         return {"display": "block"}, {"display": "none"}, quick_options, deep_options
+
+    @app.callback(
+        [Output("speculation-tickers", "value", allow_duplicate=True),
+         Output("result-text", "children", allow_duplicate=True)],
+        Input("refresh-interval", "n_intervals"),
+        prevent_initial_call=True
+    )
+    def poll_ai_picks_status(n_intervals):
+        """Poll AI Picked Stocks discovery progress and update speculation tickers field when done."""
+        status = app_state.ai_picks_status
+        if status == "discovering":
+            return dash.no_update, "Speculation Engine running — discovering AI-picked tickers..."
+        if isinstance(status, list) and status:
+            tickers_str = ", ".join(status)
+            app_state.ai_picks_status = None
+            return tickers_str, f"Speculation picks: {tickers_str}. Starting analysis..."
+        return dash.no_update, dash.no_update
 
     @app.callback(
         Output("result-text", "children", allow_duplicate=True),
