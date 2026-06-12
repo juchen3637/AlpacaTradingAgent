@@ -1000,7 +1000,10 @@ class AlpacaUtils:
         Returns dict with success / entry_order_id / client_order_id /
         message / error.
         """
-        valid_types = {"Buy Stop", "Buy Limit", "Buy Stop-Limit", "Buy Market"}
+        valid_types = {
+            "Buy Stop", "Buy Limit", "Buy Stop-Limit", "Buy Market",
+            "Sell Stop", "Sell Limit", "Sell Market",
+        }
         if order_type not in valid_types:
             return {
                 "success": False,
@@ -1010,7 +1013,7 @@ class AlpacaUtils:
         try:
             client = get_alpaca_trading_client()
             alpaca_symbol = symbol.upper().replace("/", "")
-            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            order_side = OrderSide.SELL if side.lower() == "sell" else OrderSide.BUY
 
             common = {
                 "symbol": alpaca_symbol,
@@ -1023,9 +1026,9 @@ class AlpacaUtils:
                 "client_order_id": client_order_id,
             }
 
-            if order_type == "Buy Stop":
+            if order_type in ("Buy Stop", "Sell Stop"):
                 request = StopOrderRequest(stop_price=entry_price, **common)
-            elif order_type == "Buy Limit":
+            elif order_type in ("Buy Limit", "Sell Limit"):
                 request = LimitOrderRequest(limit_price=entry_price, **common)
             elif order_type == "Buy Stop-Limit":
                 # Allow a tight slippage band above the stop trigger
@@ -1033,7 +1036,7 @@ class AlpacaUtils:
                 request = StopLimitOrderRequest(
                     stop_price=entry_price, limit_price=limit_price, **common
                 )
-            else:  # "Buy Market"
+            else:  # "Buy Market" | "Sell Market"
                 request = MarketOrderRequest(**common)
 
             order = client.submit_order(request)
@@ -1414,11 +1417,85 @@ class AlpacaUtils:
             return {"success": False, "cancelled": 0, "failed": 0, "errors": [error_msg]}
 
     @staticmethod
+    def get_premarket_movers(top_n: int = 20) -> list[dict]:
+        """Fetch stocks with the largest % change in premarket trading.
+
+        Uses Alpaca ScreenerClient for the universe (most-active ~50 stocks) and
+        Yahoo Finance (yfinance) for premarket price data — works on any Alpaca
+        tier including IEX free.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import yfinance as yf
+
+        try:
+            from alpaca.data.historical.screener import ScreenerClient
+            from alpaca.data.requests import MostActivesRequest
+            from .config import get_api_key
+
+            api_key = get_api_key("alpaca_api_key", "ALPACA_API_KEY")
+            api_secret = get_api_key("alpaca_secret_key", "ALPACA_SECRET_KEY")
+            if not api_key or not api_secret:
+                return []
+            screener = ScreenerClient(api_key, api_secret)
+            resp = screener.get_most_actives(MostActivesRequest(top=50))
+            universe = [m.symbol for m in resp.most_actives]
+        except Exception as exc:
+            print(f"[PREMARKET] Universe fetch failed: {exc}")
+            return []
+
+        def _fetch_mover(symbol: str) -> dict | None:
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                premarket_price = info.get("preMarketPrice")
+                premarket_volume = info.get("preMarketVolume") or 0
+                prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+
+                # Fallback: fetch 1-min bars with prepost=True when info field is absent
+                if not premarket_price:
+                    hist = ticker.history(period="1d", interval="1m", prepost=True)
+                    if hist is not None and not hist.empty:
+                        import pytz as _pytz
+                        eastern = _pytz.timezone("US/Eastern")
+                        hist.index = hist.index.tz_convert(eastern)
+                        pre = hist[hist.index.hour < 9]
+                        if pre.empty:
+                            pre = hist[hist.index.hour == 9][hist[hist.index.hour == 9].index.minute < 30]
+                        if not pre.empty:
+                            premarket_price = float(pre["Close"].iloc[-1])
+                            premarket_volume = int(pre["Volume"].sum())
+
+                if not premarket_price or not prev_close or prev_close <= 0:
+                    return None
+                pct_change = (premarket_price - prev_close) / prev_close * 100
+                return {
+                    "symbol": symbol,
+                    "premarket_pct": round(pct_change, 2),
+                    "premarket_volume": premarket_volume,
+                    "premarket_last": round(premarket_price, 2),
+                    "prev_close": round(prev_close, 2),
+                }
+            except Exception:
+                return None
+
+        movers = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(_fetch_mover, sym): sym for sym in universe}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    movers.append(result)
+
+        movers.sort(key=lambda x: abs(x["premarket_pct"]), reverse=True)
+        return movers[:top_n]
+
+    @staticmethod
     def execute_trading_action(symbol: str, current_position: str, signal: str,
                              dollar_amount: float, allow_shorts: bool = False,
                              stop_loss: float = None, take_profit: list = None,
                              use_bracket_orders: bool = False,
-                             entry_price: float = None) -> dict:
+                             entry_price: float = None,
+                             config: dict = None) -> dict:
         """
         Execute trading action based on current position and signal
 
@@ -1443,6 +1520,32 @@ class AlpacaUtils:
         print(f"[EXECUTE]   Take Profit: {[f'${t:.2f}' for t in take_profit]}" if take_profit else "[EXECUTE]   Take Profit: None")
         print(f"[EXECUTE]   Bracket Orders: {'ON' if use_bracket_orders else 'OFF'}")
         print(f"[EXECUTE] ═══════════════════════════════════════════════════")
+
+        # ── Safety gate (deterministic, non-LLM) ─────────────────────────
+        try:
+            from tradingagents.safety_gate import check_order
+            _cfg = config or {}
+            _account_for_gate = AlpacaUtils.get_account_info() or {}
+            _positions_for_gate = AlpacaUtils.get_positions_data() or []
+            _gate = check_order(
+                symbol=symbol,
+                signal=signal,
+                proposed_size_dollars=dollar_amount,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                account_info=_account_for_gate,
+                open_positions_count=len(_positions_for_gate),
+                config=_cfg,
+            )
+            if not _gate.passed:
+                print(f"[GATE] 🚫 Order BLOCKED for {symbol}: {_gate.reason}")
+                return {"success": False, "gate_blocked": True, "reason": _gate.reason}
+            if _gate.adjusted_size is not None:
+                print(f"[GATE] ⚠️ Size adjusted for {symbol}: ${dollar_amount:.2f} → ${_gate.adjusted_size:.2f}. Reason: {_gate.reason}")
+                dollar_amount = _gate.adjusted_size
+        except Exception as _gate_err:
+            print(f"[GATE] ⚠️ Gate check failed ({_gate_err}); proceeding without gate")
 
         try:
             results = []

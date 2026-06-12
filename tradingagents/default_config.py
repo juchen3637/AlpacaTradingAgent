@@ -28,6 +28,13 @@ DEFAULT_CONFIG = {
     "max_position_pct_of_buying_power": 30,  # Maximum % of buying power per trade
     "max_risk_pct_per_trade": 3,  # Maximum % account risk per trade
     "min_position_size": 100,  # Minimum position size in dollars
+    # Safety gate — hard limits enforced before any Alpaca order (non-LLM)
+    "max_daily_loss_pct": 5.0,   # Halt new entries if account down >N% today; 0 = disabled
+    "max_open_positions": 10,    # Hard cap on concurrent open positions; 0 = disabled
+    # Phase 4 note: upgrade to Alpaca SIP feed (Algo Trader+ ~$99/mo) for real premarket
+    # bars. Until then, ATH_BREAKOUT strategy falls back to 52-week high and
+    # premarket_volume is unavailable. Scanner strategies ORB, VWAP_RECLAIM work fine
+    # on IEX (post-9:30 data); day-trading playbooks should weight those over ATH_BREAKOUT.
     # Stop loss and take profit settings
     "use_stop_loss": True,  # Enable stop loss orders
     "use_take_profit": True,  # Enable take profit orders
