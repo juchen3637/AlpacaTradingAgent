@@ -22,7 +22,7 @@ def get_llm(provider: Optional[str] = None, model: Optional[str] = None):
 
         api_key = os.environ.get("ANTHROPIC_API_KEY") or DEFAULT_CONFIG.get("anthropic_api_key")
         model = model or DEFAULT_CONFIG.get("anthropic_quick_think_llm", "claude-sonnet-4-6")
-        anthropic_no_temp = ("claude-opus-4-7",)
+        anthropic_no_temp = ("claude-opus-4",)
         kwargs = {}
         if not any(prefix in model for prefix in anthropic_no_temp):
             kwargs["temperature"] = 0.2
@@ -33,7 +33,7 @@ def get_llm(provider: Optional[str] = None, model: Optional[str] = None):
     api_key = os.environ.get("OPENAI_API_KEY") or DEFAULT_CONFIG.get("openai_api_key")
     model = model or DEFAULT_CONFIG.get("quick_think_llm", "gpt-4o-mini")
     kwargs = {}
-    no_temp = ["o3", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]
+    no_temp = ["o1", "o3", "o4", "gpt-5"]
     if not any(prefix in model for prefix in no_temp):
         kwargs["temperature"] = 0.2
     return ChatOpenAI(model=model, openai_api_key=api_key, **kwargs)

@@ -57,6 +57,7 @@ class TickerSnapshot:
     above_sma10: bool = False
     macd_signal_cross: bool = False
     vwap_reclaim: bool = False
+    vwap_rejection: bool = False
     opening_range_high: Optional[float] = None
     minutes_since_open: Optional[int] = None
     levels: KeyLevels = field(default_factory=KeyLevels)
@@ -99,7 +100,7 @@ class Playbook:
     thesis: str
     entry_trigger: str
     entry_price: float
-    order_type: str  # "Buy Stop" | "Buy Limit" | "Buy Stop-Limit" | "Buy Market"
+    order_type: str  # "Buy Stop" | "Buy Limit" | "Buy Stop-Limit" | "Buy Market" | "Sell Stop" | "Sell Limit" | "Sell Market"
     stop_loss: float
     profit_target_1: float
     profit_target_2: float
@@ -108,5 +109,6 @@ class Playbook:
     indicators_to_watch: tuple[str, ...]
     invalidation: str
     confidence: str  # "low" | "medium" | "high"
+    side: str = "buy"  # "buy" | "sell"
     qualification_reason: str = ""
     confidence_reason: str = ""

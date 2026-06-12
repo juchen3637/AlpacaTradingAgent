@@ -13,6 +13,13 @@ LOW_FLOAT_L2 = "LOW_FLOAT_L2"
 VWAP_RECLAIM = "VWAP_RECLAIM"
 ORB = "ORB"
 
+# Short strategies
+PDH_REJECTION = "PDH_REJECTION"
+VWAP_FADE = "VWAP_FADE"
+BREAKDOWN = "BREAKDOWN"
+
+SHORT_STRATEGIES = {PDH_REJECTION, VWAP_FADE, BREAKDOWN}
+
 STRATEGY_NAMES: dict[str, str] = {
     ATH_BREAKOUT: "ATH Breakout",
     SMA10_MACD: "10-SMA + MACD Crossover",
@@ -21,9 +28,27 @@ STRATEGY_NAMES: dict[str, str] = {
     LOW_FLOAT_L2: "Low-Float Momentum + Level 2",
     VWAP_RECLAIM: "VWAP Reclaim",
     ORB: "Opening Range Breakout",
+    PDH_REJECTION: "PDH Rejection Short",
+    VWAP_FADE: "VWAP Fade Short",
+    BREAKDOWN: "PDL Breakdown Short",
 }
 
 STRATEGY_RULES: dict[str, str] = {
+    PDH_REJECTION: (
+        "Short on confirmed rejection of the previous-day high (PDH). Enter on "
+        "first 1m close back below PDH after a wick or failed breakout. Stop above "
+        "session high (or PDH + 1x ATR). Targets: VWAP, then PDL."
+    ),
+    VWAP_FADE: (
+        "Short after price crosses below VWAP from above on elevated volume. "
+        "Enter on 1m or 5m close below VWAP with declining bid. Stop above VWAP "
+        "or most recent swing high. Targets: PDL or opening range low."
+    ),
+    BREAKDOWN: (
+        "Short on break below previous-day low (PDL) with RVOL confirming "
+        "distribution. Enter on first 1m close below PDL. Stop above PDL. "
+        "Targets: 1x and 2x the prior day's range below PDL."
+    ),
     ATH_BREAKOUT: (
         "Enter on break of premarket high (PMH) or ATH with RVOL > 2 and price above VWAP. "
         "Stop below VWAP or PMH retest. Targets: next round number, then 1.5x R."

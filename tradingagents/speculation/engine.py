@@ -8,6 +8,8 @@ from typing import Optional
 from .models import SpeculativePlay
 from .news_scanner import fetch_events
 from .llm_analyzer import analyze
+from .market_context import get_market_context
+from .calendar_scanner import get_calendar_context
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,15 @@ class SpeculationEngine:
             logger.info("Speculation engine: no events found")
             return []
 
-        plays = analyze(events, provider=provider, model=model)
+        market_context = get_market_context()
+        calendar_context = get_calendar_context()
+        plays = analyze(
+            events,
+            provider=provider,
+            model=model,
+            market_context=market_context,
+            calendar_context=calendar_context,
+        )
 
         # Deduplicate by ticker — keep highest-confidence entry
         seen: dict[str, SpeculativePlay] = {}

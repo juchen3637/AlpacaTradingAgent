@@ -57,6 +57,10 @@ def create_news_analyst(llm, toolkit):
 Provide specific, actionable news analysis for EOD trading decisions with clear timing and impact assessment."""
         )
 
+        spec_ctx = state.get("speculation_context", "")
+        if spec_ctx:
+            system_message = system_message + f"\n\n{spec_ctx}"
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

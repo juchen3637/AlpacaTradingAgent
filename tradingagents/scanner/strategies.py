@@ -11,12 +11,15 @@ from typing import Optional
 
 from .constants import (
     ATH_BREAKOUT,
+    BREAKDOWN,
     LOW_FLOAT_HVD,
     LOW_FLOAT_L2,
     ORB,
+    PDH_REJECTION,
     SMA10_MACD,
     SPY_0DTE_FADE,
     STRATEGY_NAMES,
+    VWAP_FADE,
     VWAP_RECLAIM,
 )
 from .models import TickerSnapshot
@@ -90,6 +93,31 @@ def match_strategy(snap: TickerSnapshot) -> Optional[str]:
     # 10-SMA + MACD trend continuation
     if snap.above_sma10 and snap.macd_signal_cross:
         return SMA10_MACD
+
+    # ── Short strategies ──────────────────────────────────────────────
+
+    # PDH rejection: price near PDH but trending down (negative change)
+    if (
+        _near_level(price, lv.pdh, pct=0.5)
+        and snap.change_pct < -1.0
+        and snap.rvol is not None
+        and snap.rvol > 1.5
+    ):
+        return PDH_REJECTION
+
+    # VWAP fade: price crossed back below VWAP after being above it
+    if snap.vwap_rejection and snap.rvol is not None and snap.rvol > 1.5:
+        return VWAP_FADE
+
+    # PDL breakdown: price near or below PDL with volume confirmation
+    if (
+        lv.pdl is not None
+        and price <= lv.pdl * 1.003
+        and snap.change_pct < -2.0
+        and snap.rvol is not None
+        and snap.rvol > 2.0
+    ):
+        return BREAKDOWN
 
     return None
 
