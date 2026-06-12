@@ -115,8 +115,50 @@ class TestHealthEndpoint:
         This test exercises the actual helper from app_dash rather than a local
         re-implementation.
         """
+        import sys
         from flask import Flask
-        from webui.app_dash import _register_health_endpoint
+        from unittest.mock import patch, MagicMock
+
+        # conftest stubs webui.app_dash with an empty module to block the Dash
+        # import chain. Remove the stub and patch the heavy pieces so the real
+        # module loads (giving us access to _register_health_endpoint).
+        import types
+
+        # conftest stubs webui.app_dash with an empty module. We need the real
+        # one. Clear the stub and inject stubs for everything app_dash imports
+        # at module level so its `create_app()` call at the bottom doesn't
+        # trigger the full Dash/callback stack.
+        for mod in ("webui.app_dash", "webui.layout", "webui.callbacks",
+                    "webui.watchdog", "webui.utils.log_interceptor"):
+            sys.modules.pop(mod, None)
+
+        def _make_stub(name):
+            m = types.ModuleType(name)
+            m.__package__ = name.rsplit(".", 1)[0]
+            return m
+
+        layout_stub = _make_stub("webui.layout")
+        layout_stub.create_main_layout = MagicMock(return_value=MagicMock())
+        callbacks_stub = _make_stub("webui.callbacks")
+        callbacks_stub.register_all_callbacks = MagicMock()
+        watchdog_stub = _make_stub("webui.watchdog")
+        watchdog_stub.start_watchdog = MagicMock()
+        log_stub = _make_stub("webui.utils.log_interceptor")
+        log_stub.install = MagicMock()
+
+        sys.modules.update({
+            "webui.layout": layout_stub,
+            "webui.callbacks": callbacks_stub,
+            "webui.watchdog": watchdog_stub,
+            "webui.utils.log_interceptor": log_stub,
+        })
+        try:
+            from webui.app_dash import _register_health_endpoint
+        finally:
+            # Restore the conftest stubs so other tests are unaffected
+            for mod in ("webui.app_dash", "webui.layout", "webui.callbacks",
+                        "webui.watchdog", "webui.utils.log_interceptor"):
+                sys.modules.pop(mod, None)
 
         server = Flask(__name__)
         _register_health_endpoint(server)
