@@ -51,18 +51,21 @@ def _create_dashboard_page():
     chart_card = create_chart_panel()
 
     return html.Div(id="page-dashboard", children=[
-        # Row 1: Ticker input + Start Analysis
+        # Row 1: Watchlist input + Start Analysis
         dbc.Row([
             dbc.Col([
+                dbc.Label("Watchlist", className="mb-1",
+                          style={"fontSize": "11px", "textTransform": "uppercase",
+                                 "letterSpacing": "0.05em", "color": "#94A3B8"}),
                 dbc.InputGroup([
                     dbc.InputGroupText(
-                        html.Span("search", className="material-symbols-outlined",
+                        html.Span("bookmark", className="material-symbols-outlined",
                                   style={"fontSize": "18px", "color": "#94A3B8"}),
                     ),
                     dbc.Input(
                         id="ticker-input",
                         type="text",
-                        placeholder="Enter symbols to analyze (e.g., AAPL, NVDA, BTC/USD)",
+                        placeholder="Permanent watchlist (e.g., AAPL, NVDA, BTC/USD)",
                         value="NVDA, AMD, TSLA",
                     ),
                 ], className="mb-0"),
@@ -77,9 +80,29 @@ def _create_dashboard_page():
                         color="primary",
                         className="w-100",
                     ),
-                ]),
+                ], style={"marginTop": "22px"}),
             ], xs=12, lg=3),
-        ], className="mb-3", align="center"),
+        ], className="mb-2", align="start"),
+        # Row 2: Speculation Picks (auto-populated by speculation engine)
+        dbc.Row([
+            dbc.Col([
+                dbc.Label("Speculation Picks", className="mb-1",
+                          style={"fontSize": "11px", "textTransform": "uppercase",
+                                 "letterSpacing": "0.05em", "color": "#94A3B8"}),
+                dbc.InputGroup([
+                    dbc.InputGroupText(
+                        html.Span("auto_awesome", className="material-symbols-outlined",
+                                  style={"fontSize": "18px", "color": "#7C3AED"}),
+                    ),
+                    dbc.Input(
+                        id="speculation-tickers",
+                        type="text",
+                        placeholder="Auto-populated by speculation engine — or enter tickers manually",
+                        value="",
+                    ),
+                ], className="mb-0"),
+            ], xs=12),
+        ], className="mb-3"),
         html.Div(id="result-text", className="mb-3"),
 
         # Row 2: Full-width chart

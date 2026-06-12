@@ -290,6 +290,16 @@ def register_scanner_callbacks(app):
     ]
 
     @app.callback(
+        Output("scanner-stop-btn", "n_clicks"),
+        Input("scanner-stop-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def stop_scan(n_clicks):
+        if n_clicks:
+            SCANNER_STATE.request_cancel()
+        return 0
+
+    @app.callback(
         [
             Output("scanner-results-table", "data"),
             Output("scanner-stats", "children"),
@@ -311,6 +321,7 @@ def register_scanner_callbacks(app):
             (Output("scanner-run-btn", "disabled"), True, False),
             (Output("scanner-run-btn", "color"), "danger", "primary"),
             (Output("scanner-run-btn", "children"), _run_busy_children, _run_idle_children),
+            (Output("scanner-stop-btn", "style"), {"display": "block"}, {"display": "none"}),
         ],
         prevent_initial_call=True,
     )
@@ -318,6 +329,8 @@ def register_scanner_callbacks(app):
                  max_float, catalyst_only, watchlist_raw, force_refresh):
         if not n_clicks:
             return no_update, no_update, no_update, no_update
+
+        SCANNER_STATE.reset_cancel()
 
         filters = _build_filters(
             universe, min_rvol, price_min, price_max,
@@ -333,7 +346,7 @@ def register_scanner_callbacks(app):
             from tradingagents.scanner.data_provider import AlpacaDataProvider
             provider = AlpacaDataProvider()
             pipeline = ScannerPipeline(provider)
-            results = pipeline.run(filters)
+            results = pipeline.run(filters, cancel=SCANNER_STATE.cancel_flag)
         except Exception as exc:
             logger.exception("Scan failed")
             return (
@@ -342,6 +355,9 @@ def register_scanner_callbacks(app):
                 [],
                 [],
             )
+
+        if SCANNER_STATE.cancel_flag.is_set():
+            return [], "Scan cancelled.", [], []
 
         SCANNER_STATE.set_results(results)
 
@@ -711,10 +727,11 @@ def register_scanner_callbacks(app):
             State("scanner-results-table", "selected_rows"),
             State("scanner-results-store", "data"),
             State("scanner-llm-model", "value"),
+            State("scanner-llm-provider", "value"),
         ],
         prevent_initial_call=True,
     )
-    def open_execute_confirm(n_clicks, selected_rows, rows, model):
+    def open_execute_confirm(n_clicks, selected_rows, rows, model, provider):
         if not n_clicks or not selected_rows or not rows:
             return no_update, no_update, no_update, no_update
 
@@ -803,7 +820,10 @@ def register_scanner_callbacks(app):
         pending = {
             "symbol": symbol,
             "strategy_id": strategy_id,
+            "strategy_name": row.get("strategy_name", strategy_id),
             "model": model or "",
+            "provider": provider or "openai",
+            "scan_row": row,
             "qty": qty,
         }
         return True, body, pending, ""
@@ -855,6 +875,26 @@ def register_scanner_callbacks(app):
             ), None
 
         if result.success:
+            linked_alpaca = {
+                "order_id": result.alpaca_order_id,
+                "client_order_id": result.client_order_id,
+                "qty": result.qty,
+            }
+            try:
+                SAVED_PLAYS.save(
+                    symbol=symbol,
+                    strategy_id=pending.get("strategy_id", symbol),
+                    strategy_name=pending.get("strategy_name", pending.get("strategy_id", symbol)),
+                    model=pending.get("model", ""),
+                    provider=pending.get("provider", "openai"),
+                    playbook=playbook,
+                    scan_row=pending.get("scan_row") or {},
+                    linked_alpaca=linked_alpaca,
+                    label=f"{symbol} · {pending.get('strategy_name', pending.get('strategy_id', ''))}",
+                )
+            except Exception:
+                logger.exception("Failed to save play after execution for %s", symbol)
+
             status = html.Div(
                 [
                     html.Span("check_circle",
@@ -868,7 +908,7 @@ def register_scanner_callbacks(app):
                     html.Code(result.client_order_id or "?",
                               style={"backgroundColor": "rgba(15,23,42,0.6)",
                                      "padding": "1px 6px", "borderRadius": "3px"}),
-                    ". Chart auto-refreshes every 3s.",
+                    ". Saved to Plays. Chart auto-refreshes every 3s.",
                 ],
                 style={"color": "#22C55E"},
             )
@@ -1590,4 +1630,91 @@ def register_scanner_callbacks(app):
                     "be unavailable, or web search may be rate-limited. "
                     "Try again in a minute._")
         return markdown
+
+    @app.callback(
+        [
+            Output("auto-scan-premarket-table", "data"),
+            Output("auto-scan-premarket-status", "children"),
+            Output("auto-scan-market-open-table", "data"),
+            Output("auto-scan-market-open-status", "children"),
+        ],
+        Input("refresh-interval", "n_intervals"),
+    )
+    def update_auto_scan_displays(_n):
+        from webui.utils.state import app_state
+
+        pre_rows = []
+        pre_status = "Runs automatically at 8:00 AM ET on market days."
+        mo_rows = []
+        mo_status = "Runs automatically at 9:45 AM ET on market days."
+
+        if app_state.auto_scan_running:
+            if app_state.premarket_scan_ran_at is None:
+                pre_status = "Scanning pre-market movers..."
+            if app_state.market_open_scan_ran_at is None:
+                mo_status = "Scanning market-open leaders..."
+
+        results = app_state.premarket_scan_results
+        if results is not None:
+            if not results:
+                pre_status = (
+                    "No pre-market data found — market may not be in pre-market hours "
+                    "or no movers detected yet."
+                    if app_state.premarket_scan_ran_at else pre_status
+                )
+            else:
+                ran_at = app_state.premarket_scan_ran_at
+                ran_str = ran_at.strftime("%I:%M %p ET") if ran_at else ""
+                pre_status = f"Last scan: {ran_str} · {len(results)} movers found"
+                for m in results:
+                    pre_rows.append({
+                        "symbol": m.get("symbol", ""),
+                        "premarket_pct": m.get("premarket_pct"),
+                        "premarket_volume": m.get("premarket_volume"),
+                        "prev_close": m.get("prev_close"),
+                        "catalyst": "YES" if m.get("has_catalyst") else "NO",
+                    })
+
+        mo_results = app_state.market_open_scan_results
+        if mo_results is not None:
+            ran_at = app_state.market_open_scan_ran_at
+            ran_str = ran_at.strftime("%I:%M %p ET") if ran_at else ""
+            mo_status = f"Last scan: {ran_str} · {len(mo_results)} leaders found"
+            for r in mo_results:
+                s = r.snapshot
+                mo_rows.append({
+                    "symbol": s.symbol,
+                    "last_price": s.last_price,
+                    "change_pct": s.change_pct,
+                    "rvol": s.rvol,
+                    "today_volume": s.today_volume,
+                    "catalyst": s.catalyst_text if s.has_catalyst else "—",
+                    "strategy_name": r.strategy_name,
+                    "score": r.score,
+                })
+
+        return pre_rows, pre_status, mo_rows, mo_status
+
+    @app.callback(
+        Output("scanner-watchlist", "value"),
+        [
+            Input("auto-scan-premarket-table", "selected_rows"),
+            Input("auto-scan-market-open-table", "selected_rows"),
+        ],
+        [
+            State("auto-scan-premarket-table", "data"),
+            State("auto-scan-market-open-table", "data"),
+        ],
+        prevent_initial_call=True,
+    )
+    def auto_scan_row_to_watchlist(pre_rows_sel, mo_rows_sel, pre_data, mo_data):
+        from dash import ctx
+        triggered = ctx.triggered_id
+        if triggered == "auto-scan-premarket-table" and pre_rows_sel and pre_data:
+            symbol = pre_data[pre_rows_sel[0]].get("symbol", "")
+            return symbol
+        if triggered == "auto-scan-market-open-table" and mo_rows_sel and mo_data:
+            symbol = mo_data[mo_rows_sel[0]].get("symbol", "")
+            return symbol
+        return no_update
 

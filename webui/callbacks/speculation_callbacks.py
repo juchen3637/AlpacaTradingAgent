@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime
+from typing import Optional
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback_context, dcc, html, no_update
@@ -11,6 +13,11 @@ from dash import ALL, Input, Output, State, callback_context, dcc, html, no_upda
 from webui.components.scanner_page import PLAYBOOK_MODEL_OPTIONS
 from webui.components.speculation_page import SPECULATION_MODEL_OPTIONS
 from webui.utils.speculation_state import SPECULATION_STATE
+
+# Module-level guard: track last rendered timestamp to avoid redundant re-renders.
+# Protected by a lock because Dash callbacks run in multiple threads.
+_last_rendered_ts: dict[str, Optional[float]] = {"ts": None}
+_last_rendered_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +141,7 @@ def _play_card(play) -> dbc.Card:
                     id={"type": "spec-deep-dive-btn", "index": f"{play.ticker}_{play.direction}"},
                     size="sm",
                     color="link",
+                    className="spec-deep-dive-card-btn",
                     style={
                         "color": "#A78BFA",
                         "fontSize": "11px",
@@ -226,9 +234,9 @@ def register_speculation_callbacks(app):
 
     @app.callback(
         [
-            Output("speculation-results-panel", "children"),
-            Output("speculation-scan-status", "children"),
-            Output("speculation-results-store", "data"),
+            Output("speculation-results-panel", "children", allow_duplicate=True),
+            Output("speculation-scan-status", "children", allow_duplicate=True),
+            Output("speculation-results-store", "data", allow_duplicate=True),
         ],
         Input("speculation-run-btn", "n_clicks"),
         [
@@ -249,7 +257,7 @@ def register_speculation_callbacks(app):
             from tradingagents.speculation import SpeculationEngine
             engine = SpeculationEngine()
             plays = engine.run(provider=provider or "openai", model=model or None)
-            SPECULATION_STATE.set_plays(plays)
+            SPECULATION_STATE.set_plays_and_stop_scanning(plays, source="manual scan")
         except Exception as exc:
             logger.exception("Speculation scan failed")
             error_msg = html.Div(
@@ -257,6 +265,10 @@ def register_speculation_callbacks(app):
                 style={"color": "#EF4444", "fontSize": "13px", "padding": "16px"},
             )
             return error_msg, f"Error: {exc}", []
+
+        # Sync guard so polling callback doesn't redundantly re-render this result
+        with _last_rendered_lock:
+            _last_rendered_ts["ts"] = SPECULATION_STATE.last_scan_ts()
 
         ts = datetime.now().strftime("%H:%M:%S")
         status = f"Last scan: {ts} · {len(plays)} plays identified"
@@ -426,7 +438,8 @@ def register_speculation_callbacks(app):
                                                  "fontSize": "12px", "marginRight": "8px"}),
             html.Span(f"Deep Dive — {company}",
                       style={"color": "#CBD5E1", "fontSize": "13px"}),
-        ], style={"display": "flex", "alignItems": "center", "gap": "4px"})
+        ], style={"display": "flex", "alignItems": "center", "gap": "4px",
+                  "flexWrap": "wrap", "rowGap": "4px"})
         return True, title
 
     # ── Deep Dive: run button → LLM analysis ─────────────────────────────────
@@ -529,3 +542,51 @@ def register_speculation_callbacks(app):
                 return sig
         # Signal not found in store — return minimal dict from chip id
         return {"ticker": ticker, "direction": direction}
+
+    # ── Polling: push engine-triggered plays to Speculation tab ──────────────
+
+    @app.callback(
+        [
+            Output("speculation-results-panel", "children", allow_duplicate=True),
+            Output("speculation-scan-status", "children", allow_duplicate=True),
+            Output("speculation-results-store", "data", allow_duplicate=True),
+        ],
+        Input("speculation-refresh-interval", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def poll_speculation_state(n_intervals):
+        """Refresh the Speculation tab whenever the engine writes new plays."""
+        # Short-circuit: nothing new since last render
+        current_ts = SPECULATION_STATE.last_scan_ts()
+        with _last_rendered_lock:
+            if current_ts is None or current_ts == _last_rendered_ts["ts"]:
+                return no_update, no_update, no_update
+
+        # Engine still running — show spinner in status but don't update panel yet
+        if SPECULATION_STATE.is_scanning():
+            return no_update, "Speculation engine running — discovering plays…", no_update
+
+        plays = SPECULATION_STATE.get_plays()
+        with _last_rendered_lock:
+            _last_rendered_ts["ts"] = current_ts
+
+        source = SPECULATION_STATE.get_source() or "manual scan"
+        ts_label = datetime.fromtimestamp(current_ts).strftime("%H:%M:%S")
+        status = f"Last update: {ts_label} · {len(plays)} play(s) · source: {source}"
+
+        store_data = [
+            {
+                "ticker": p.ticker,
+                "company_name": p.company_name,
+                "sector": p.sector,
+                "direction": p.direction,
+                "confidence": p.confidence,
+                "reasoning": p.reasoning,
+                "catalyst_type": p.catalyst_type,
+                "event_headline": p.event.headline,
+                "event_source": p.event.source,
+            }
+            for p in plays
+        ]
+
+        return _render_results(plays), status, store_data

@@ -7,6 +7,7 @@ from typing import Dict, Any
 # Default settings structure
 DEFAULT_SETTINGS = {
     "ticker_input": "NVDA, AMD, TSLA",
+    "ai_picked_stocks": False,
     "analyst_market": True,
     "analyst_social": True,
     "analyst_news": True,

@@ -2,6 +2,8 @@
 Trading Agents Framework - State Management
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -86,6 +88,12 @@ class AppState:
         self.market_hour_thread = None
         self.stop_market_hour = False
         
+        # AI Picked Stocks discovery status
+        # None = idle, "discovering" = engine running, list[str] = completed (tickers to display)
+        self.ai_picks_status = None
+        self.ai_discovered_tickers: list = []
+        self.ai_picks_source: str | None = None  # "analysis-start" | "market-hour {h}:00"
+
         # Trading configuration
         self.trade_enabled = False
         self.trade_amount = 1000
@@ -109,6 +117,13 @@ class AppState:
         self.cost_controls = {}
 
         self.refresh_interval = 1.0  # seconds
+
+        # Auto-scan state (fires automatically before/at market open)
+        self.premarket_scan_results = None   # list[dict] | None
+        self.premarket_scan_ran_at = None    # datetime (ET) | None
+        self.market_open_scan_results = None  # list[ScanResult] | None
+        self.market_open_scan_ran_at = None   # datetime (ET) | None
+        self.auto_scan_running = False
         self.analysis_complete = False
         self.analysis_results = None
         self.ticker_symbol = None
