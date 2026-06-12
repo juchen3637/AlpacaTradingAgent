@@ -276,6 +276,8 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                 print(f"[EXIT_GATE] Allowing close for {ticker}: {decision.reason}")
 
         # Execute the trading action with stop/targets (respect toggles)
+        from tradingagents.default_config import DEFAULT_CONFIG as _DEFAULT_GATE_CFG
+        _gate_config = {**_DEFAULT_GATE_CFG, **getattr(app_state, "current_config", {})}
         result = AlpacaUtils.execute_trading_action(
             symbol=ticker,
             current_position=current_position,
@@ -285,13 +287,20 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
             stop_loss=final_stop_loss,
             take_profit=final_take_profit,
             use_bracket_orders=use_bracket_orders,
-            entry_price=approved_prices.get("entry_price") if approved_prices else None
+            entry_price=approved_prices.get("entry_price") if approved_prices else None,
+            config=_gate_config,
         )
-        
+
         # Persist each order leg to the trade journal (best-effort)
         decision_id = state.get("journal_decision_id")
         if decision_id:
             _record_trade_results(decision_id, ticker, result)
+            if result.get("gate_blocked"):
+                try:
+                    get_journal().update_decision_gate_result(decision_id, result.get("reason", "blocked"))
+                    print(f"[JOURNAL] Recorded gate rejection for decision {decision_id}: {result.get('reason')}")
+                except Exception as gate_journal_exc:
+                    print(f"[JOURNAL] Failed to record gate rejection: {gate_journal_exc}")
 
         # Check individual action results and provide detailed feedback
         successful_actions = []
@@ -369,6 +378,10 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         from tradingagents.agents.utils.agent_utils import set_thread_symbol
         set_thread_symbol(ticker)
 
+        # Zero this thread's LLM cost bucket so the journal records per-run cost
+        from tradingagents.llm_cost import reset_thread_cost
+        reset_thread_cost()
+
         # Always use current date for real-time analysis
         from datetime import datetime
         current_date = datetime.now().strftime("%Y-%m-%d")
@@ -404,11 +417,31 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         # Force an initial UI update
         app_state.needs_ui_update = True
         
+        # Build speculation context string for this ticker (if engine ran)
+        speculation_context = ""
+        try:
+            from webui.utils.speculation_state import SPECULATION_STATE
+            plays = SPECULATION_STATE.get_plays()
+            for play in plays:
+                if play.ticker.upper() == ticker.upper():
+                    speculation_context = (
+                        f"**SPECULATION ENGINE SIGNAL:** This ticker was flagged as "
+                        f"**{play.direction.upper()}** by the speculation engine.\n"
+                        f"- Catalyst: {play.catalyst_type}\n"
+                        f"- Confidence: {play.confidence}\n"
+                        f"- Reasoning: {play.reasoning}\n"
+                        f"Factor this signal into your analysis and give it appropriate weight "
+                        f"alongside the data you gather."
+                    )
+                    break
+        except Exception:
+            pass
+
         # Run analysis with tracing using current date
         print(f"[PARALLEL-{thread_id}] {ticker}: Starting graph stream with current market data")
         trace = []
         for chunk in graph.graph.stream(
-            graph.propagator.create_initial_state(ticker, current_date),
+            graph.propagator.create_initial_state(ticker, current_date, speculation_context=speculation_context),
             stream_mode="values",
             config={"recursion_limit": 100}
         ):

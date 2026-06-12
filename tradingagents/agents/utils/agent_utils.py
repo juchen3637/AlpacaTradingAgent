@@ -248,16 +248,30 @@ def log_llm_end(agent_type: str, model_name: str, start_time: float, result=None
 
     # Extract token usage if available
     tokens_str = ""
+    input_tokens = output_tokens = 0
     if result:
         if hasattr(result, 'usage_metadata'):
             usage = result.usage_metadata
-            input_tokens = getattr(usage, 'input_tokens', 0)
-            output_tokens = getattr(usage, 'output_tokens', 0)
+            if isinstance(usage, dict):
+                input_tokens = usage.get('input_tokens', 0) or 0
+                output_tokens = usage.get('output_tokens', 0) or 0
+            else:
+                input_tokens = getattr(usage, 'input_tokens', 0) or 0
+                output_tokens = getattr(usage, 'output_tokens', 0) or 0
             tokens_str = f" | Tokens: {input_tokens}→{output_tokens}"
         elif hasattr(result, 'response_metadata'):
             usage = result.response_metadata.get('token_usage', {})
             if usage:
-                tokens_str = f" | Tokens: {usage.get('prompt_tokens', 0)}→{usage.get('completion_tokens', 0)}"
+                input_tokens = usage.get('prompt_tokens', 0) or 0
+                output_tokens = usage.get('completion_tokens', 0) or 0
+                tokens_str = f" | Tokens: {input_tokens}→{output_tokens}"
+
+    if input_tokens or output_tokens:
+        try:
+            from tradingagents.llm_cost import add_usage
+            add_usage(model_name, input_tokens, output_tokens)
+        except Exception:
+            pass
 
     print(f"[LLM - {agent_type}] ✅ {model_name} completed in {elapsed:.2f}s{tokens_str}")
 

@@ -138,6 +138,10 @@ class DecisionRecord:
     allow_shorts: bool = False
     source: str = "agent"  # 'agent' for live decisions, 'backfill' for Alpaca historical import
     source_order_id: str | None = None  # Alpaca client_order_id / order id for dedup
+    # Eval loop fields — logged per decision to power the performance eval report
+    conviction: float | None = None          # 0..1 extracted from agent output
+    llm_cost_estimate: float | None = None   # estimated USD cost for this decision's LLM calls
+    gate_rejection_reason: str | None = None # set when safety gate blocked the trade
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -185,6 +189,12 @@ class TradeJournal:
                 conn.execute("ALTER TABLE decisions ADD COLUMN source TEXT DEFAULT 'agent'")
             if "source_order_id" not in existing_cols:
                 conn.execute("ALTER TABLE decisions ADD COLUMN source_order_id TEXT")
+            if "conviction" not in existing_cols:
+                conn.execute("ALTER TABLE decisions ADD COLUMN conviction REAL")
+            if "llm_cost_estimate" not in existing_cols:
+                conn.execute("ALTER TABLE decisions ADD COLUMN llm_cost_estimate REAL")
+            if "gate_rejection_reason" not in existing_cols:
+                conn.execute("ALTER TABLE decisions ADD COLUMN gate_rejection_reason TEXT")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_decisions_source ON decisions(source)"
             )
@@ -221,8 +231,9 @@ class TradeJournal:
                     position_size_dollars, entry_price, stop_loss, take_profit,
                     selected_analysts, research_depth, llm_provider,
                     quick_llm, deep_llm, execution_time_seconds, allow_shorts,
-                    source, source_order_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source, source_order_id,
+                    conviction, llm_cost_estimate, gate_rejection_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.timestamp, record.ticker, record.trade_date, record.signal,
@@ -237,9 +248,18 @@ class TradeJournal:
                     record.quick_llm, record.deep_llm, record.execution_time_seconds,
                     1 if record.allow_shorts else 0,
                     record.source, record.source_order_id,
+                    record.conviction, record.llm_cost_estimate, record.gate_rejection_reason,
                 ),
             )
             return int(cur.lastrowid)
+
+    def update_decision_gate_result(self, decision_id: int, reason: str) -> None:
+        """Stamp a decision row with the safety-gate rejection reason."""
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE decisions SET gate_rejection_reason = ? WHERE id = ?",
+                (reason, decision_id),
+            )
 
     def record_trade(self, record: TradeRecord) -> int:
         """Insert a trade row; returns the new trade_id."""
@@ -392,6 +412,105 @@ class TradeJournal:
                 row = conn.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()
             return int(row["c"])
 
+    def get_eval_report(
+        self,
+        *,
+        days: int = 90,
+        min_trades: int = 5,
+    ) -> dict[str, Any]:
+        """Return a performance eval report for the last ``days`` days.
+
+        Metrics:
+          - total_decisions: analysis runs in window
+          - total_trades: Alpaca orders linked to decisions
+          - closed_trades: outcomes recorded (position closed)
+          - win_rate: % of closed trades with pnl_dollars > 0
+          - total_pnl_dollars: sum of closed outcome P&L
+          - avg_pnl_per_trade: mean P&L per closed trade
+          - total_llm_cost: sum of llm_cost_estimate (where tracked)
+          - avg_conviction: mean conviction score (where tracked)
+          - conviction_calibration: win rate for conviction≥0.7 vs <0.7
+          - gate_blocks: decisions blocked by safety gate
+          - note: guidance message (e.g. "not enough data for statistical confidence")
+        """
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        with self._connect() as conn:
+            n_decisions = conn.execute(
+                "SELECT COUNT(*) AS c FROM decisions WHERE timestamp >= ?", (cutoff,)
+            ).fetchone()["c"]
+
+            n_trades = conn.execute(
+                "SELECT COUNT(*) AS c FROM trades t "
+                "JOIN decisions d ON t.decision_id = d.id WHERE d.timestamp >= ?",
+                (cutoff,),
+            ).fetchone()["c"]
+
+            outcome_rows = conn.execute(
+                "SELECT o.pnl_dollars, d.conviction FROM outcomes o "
+                "JOIN decisions d ON o.decision_id = d.id WHERE d.timestamp >= ?",
+                (cutoff,),
+            ).fetchall()
+
+            cost_row = conn.execute(
+                "SELECT SUM(llm_cost_estimate) AS total, AVG(llm_cost_estimate) AS avg "
+                "FROM decisions WHERE timestamp >= ? AND llm_cost_estimate IS NOT NULL",
+                (cutoff,),
+            ).fetchone()
+
+            gate_blocks = conn.execute(
+                "SELECT COUNT(*) AS c FROM decisions "
+                "WHERE timestamp >= ? AND gate_rejection_reason IS NOT NULL",
+                (cutoff,),
+            ).fetchone()["c"]
+
+        closed = len(outcome_rows)
+        wins = sum(1 for r in outcome_rows if (r["pnl_dollars"] or 0) > 0)
+        total_pnl = sum((r["pnl_dollars"] or 0) for r in outcome_rows)
+
+        high_conv = [r for r in outcome_rows if r["conviction"] is not None and r["conviction"] >= 0.7]
+        low_conv = [r for r in outcome_rows if r["conviction"] is not None and r["conviction"] < 0.7]
+        high_conv_wr = (
+            sum(1 for r in high_conv if (r["pnl_dollars"] or 0) > 0) / len(high_conv)
+            if high_conv else None
+        )
+        low_conv_wr = (
+            sum(1 for r in low_conv if (r["pnl_dollars"] or 0) > 0) / len(low_conv)
+            if low_conv else None
+        )
+
+        convictions = [r["conviction"] for r in outcome_rows if r["conviction"] is not None]
+
+        note = ""
+        if closed < min_trades:
+            note = (
+                f"Only {closed} closed trades in the last {days} days "
+                f"(need {min_trades} for statistical confidence). Keep paper-trading."
+            )
+
+        return {
+            "window_days": days,
+            "total_decisions": int(n_decisions),
+            "total_trades": int(n_trades),
+            "closed_trades": closed,
+            "win_rate": round(wins / closed, 3) if closed else None,
+            "total_pnl_dollars": round(total_pnl, 2),
+            "avg_pnl_per_trade": round(total_pnl / closed, 2) if closed else None,
+            "total_llm_cost": round(float(cost_row["total"] or 0), 4),
+            "avg_llm_cost_per_decision": round(float(cost_row["avg"] or 0), 4) if cost_row["avg"] else None,
+            "avg_conviction": round(sum(convictions) / len(convictions), 3) if convictions else None,
+            "conviction_calibration": {
+                "high_conviction_win_rate": round(high_conv_wr, 3) if high_conv_wr is not None else None,
+                "low_conviction_win_rate": round(low_conv_wr, 3) if low_conv_wr is not None else None,
+                "high_conviction_trades": len(high_conv),
+                "low_conviction_trades": len(low_conv),
+            },
+            "gate_blocks": int(gate_blocks),
+            "note": note,
+        }
+
     # ---- Destructive ----------------------------------------------------
 
     def clear_all(self) -> dict[str, int]:
@@ -467,6 +586,24 @@ def build_decision_from_state(
     risk_debate = final_state.get("risk_debate_state") or {}
     approved_prices = final_state.get("approved_trading_prices") or {}
 
+    conviction = None
+    try:
+        from tradingagents.agents.utils.position_size_extractor import extract_conviction
+        decision_text = final_state.get("final_trade_decision") or ""
+        if decision_text:
+            conviction = extract_conviction(decision_text)
+    except Exception as exc:
+        logger.warning("Conviction extraction failed for %s: %s", ticker, exc)
+
+    llm_cost = None
+    try:
+        from tradingagents.llm_cost import get_thread_cost
+        cost = get_thread_cost()
+        if cost > 0:
+            llm_cost = round(cost, 4)
+    except Exception:
+        pass
+
     return DecisionRecord(
         ticker=ticker,
         trade_date=trade_date,
@@ -496,6 +633,8 @@ def build_decision_from_state(
         deep_llm=config.get("deep_think_llm"),
         execution_time_seconds=execution_time_seconds,
         allow_shorts=allow_shorts,
+        conviction=conviction,
+        llm_cost_estimate=llm_cost,
     )
 
 
