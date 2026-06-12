@@ -15,18 +15,85 @@ Concurrency: the ``app_state.last_analysis_at`` and ``last_analysis_price``
 dicts are touched from multiple threads (market-hour loop + parallel-batch
 worker threads + Dash callbacks). Both reads and writes hold
 ``app_state.reanalysis_lock`` — declared in webui/utils/state.py.
+
+Persistence: timestamps are written to SQLite (data/reanalysis_gate.db) so
+that a process restart does NOT reset all cooldowns and re-fire every ticker
+(which would blow the LLM budget in one shot).
 """
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # Fallback lock used only by tests that pass a bare object as ``app_state``.
 # Production code always provides ``app_state.reanalysis_lock``.
 _FALLBACK_LOCK = threading.Lock()
+
+# SQLite path for persistent cooldown storage
+_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "reanalysis_gate.db"
+_DB_LOCK = threading.Lock()
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reanalysis_timestamps (
+    ticker TEXT PRIMARY KEY,
+    last_at TEXT NOT NULL,
+    last_price REAL
+);
+"""
+
+
+def _ensure_db() -> None:
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(_DB_PATH)) as conn:
+        conn.executescript(_SCHEMA)
+
+
+def _load_from_db(app_state: Any) -> None:
+    """Seed in-memory state from SQLite on startup (called once)."""
+    try:
+        with _DB_LOCK:
+            _ensure_db()
+            with sqlite3.connect(str(_DB_PATH)) as conn:
+                rows = conn.execute("SELECT ticker, last_at, last_price FROM reanalysis_timestamps").fetchall()
+        with _state_lock(app_state):
+            if not hasattr(app_state, "last_analysis_at"):
+                app_state.last_analysis_at = {}
+            if not hasattr(app_state, "last_analysis_price"):
+                app_state.last_analysis_price = {}
+            for ticker, last_at_str, last_price in rows:
+                try:
+                    dt = datetime.fromisoformat(last_at_str)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    app_state.last_analysis_at[ticker] = dt
+                    if last_price:
+                        app_state.last_analysis_price[ticker] = float(last_price)
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.warning("[REANALYSIS_GATE] Could not load persistent timestamps: %s", exc)
+
+
+def _save_to_db(ticker: str, ts: datetime, price: Optional[float]) -> None:
+    """Persist a single ticker's timestamp/price to SQLite."""
+    try:
+        with _DB_LOCK:
+            _ensure_db()
+            with sqlite3.connect(str(_DB_PATH)) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO reanalysis_timestamps (ticker, last_at, last_price) VALUES (?, ?, ?)",
+                    (ticker, ts.isoformat(), price),
+                )
+    except Exception as exc:
+        logger.warning("[REANALYSIS_GATE] Could not persist timestamp for %s: %s", ticker, exc)
 
 
 def _now_utc() -> datetime:
@@ -109,6 +176,7 @@ def record_analysis(
 
     Holds ``app_state.reanalysis_lock`` while updating both dicts so
     concurrent readers see a consistent (timestamp, price) pair.
+    Also persists to SQLite so cooldowns survive process restarts.
     """
     ts = _ensure_utc(when or _now_utc())
     with _state_lock(app_state):
@@ -119,3 +187,4 @@ def record_analysis(
         app_state.last_analysis_at[symbol] = ts
         if price is not None and price > 0:
             app_state.last_analysis_price[symbol] = float(price)
+    _save_to_db(symbol, ts, price if price and price > 0 else None)

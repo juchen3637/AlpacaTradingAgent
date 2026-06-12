@@ -119,6 +119,13 @@ def create_app():
         ],
         suppress_callback_exceptions=APP_CONFIG["suppress_callback_exceptions"],
         update_title=APP_CONFIG["update_title"],
+        meta_tags=[
+            {"name": "viewport",
+             "content": "width=device-width, initial-scale=1, shrink-to-fit=no"},
+            {"name": "apple-mobile-web-app-capable", "content": "yes"},
+            {"name": "apple-mobile-web-app-status-bar-style", "content": "black-translucent"},
+            {"name": "mobile-web-app-capable", "content": "yes"},
+        ],
     )
 
     # Set app title
@@ -137,6 +144,15 @@ def create_app():
         print("[STARTUP] Resuming market-hour mode from saved state")
         from webui.callbacks.control_callbacks import _launch_market_hour_thread
         _launch_market_hour_thread(saved["symbols"], saved["config"], saved["hours"])
+
+    # Restore reanalysis cooldown timestamps from SQLite so a restart doesn't
+    # reset all cooldowns and blow the LLM budget re-analyzing every ticker.
+    from webui.utils.reanalysis_gate import _load_from_db as _load_reanalysis_gate
+    _load_reanalysis_gate(_app_state)
+
+    # Start the automatic pre-market and market-open scan scheduler
+    from webui.utils.auto_scan_scheduler import start_auto_scan_scheduler
+    start_auto_scan_scheduler(_app_state)
 
     return app
 

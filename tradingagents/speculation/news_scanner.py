@@ -22,6 +22,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE_TTL = 30 * 60  # 30 minutes
 
 _MACRO_QUERIES = [
+    # Hard catalysts
     "major accident explosion disaster",
     "supply disruption shortage commodity",
     "IPO announcement merger acquisition",
@@ -32,25 +33,36 @@ _MACRO_QUERIES = [
     "drug approval FDA breakthrough",
     "tech layoffs bankruptcy earnings surprise",
     "energy oil gas pipeline disruption",
+    # Macro data releases
+    "CPI inflation consumer price index report",
+    "PPI producer price index",
+    "Federal Reserve interest rates inflation",
+    "jobs report unemployment nonfarm payrolls",
+    "GDP economic growth recession",
+    # Sector trends
+    "artificial intelligence AI stocks chips semiconductor",
+    "software cloud earnings revenue guidance",
+    "AI infrastructure data center hyperscaler",
+    "technology sector rotation momentum",
+    "biotech pharma clinical trial FDA",
 ]
 
-# Module-level lazy Finnhub client singleton
-_finnhub_client = None
+# Module-level lazy Finnhub client (not cached on failure — recreated each call
+# so a transient import/network error doesn't disable Finnhub for the session).
 _finnhub_client_lock = threading.Lock()
 
 
 def _get_finnhub_client():
-    global _finnhub_client
     with _finnhub_client_lock:
-        if _finnhub_client is None:
-            try:
-                import finnhub
-                api_key = os.environ.get("FINNHUB_API_KEY", "")
-                if api_key:
-                    _finnhub_client = finnhub.Client(api_key=api_key)
-            except Exception as exc:
-                logger.warning("Could not create Finnhub client: %s", exc)
-        return _finnhub_client
+        try:
+            import finnhub
+            api_key = os.environ.get("FINNHUB_API_KEY", "")
+            if not api_key:
+                return None
+            return finnhub.Client(api_key=api_key)
+        except Exception as exc:
+            logger.warning("Could not create Finnhub client: %s", exc)
+            return None
 
 
 def _fetch_google_news(today: str) -> list[SpeculationEvent]:
