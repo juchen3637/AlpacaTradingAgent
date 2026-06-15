@@ -92,9 +92,11 @@ def main():
     def _shutdown_handler(signum, frame):
         import logging
         from webui.utils.state import app_state
+        from tradingagents.dataflows.alpaca_stream import stop_bracket_leg_adjuster
         logging.getLogger(__name__).info(
             "Received shutdown signal, shutting down gracefully"
         )
+        stop_bracket_leg_adjuster()
         app_state.stop_loop_mode()
         app_state.stop_market_hour_mode()
         sys.exit(0)

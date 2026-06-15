@@ -12,15 +12,17 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     GetAssetsRequest,
     GetOrdersRequest,
+    GetOrderByIdRequest,
     MarketOrderRequest,
     ClosePositionRequest,
     LimitOrderRequest,
     StopOrderRequest,
     StopLimitOrderRequest,
     StopLossRequest,
-    TakeProfitRequest
+    TakeProfitRequest,
+    ReplaceOrderRequest,
 )
-from alpaca.trading.enums import AssetClass, OrderSide, TimeInForce, OrderClass
+from alpaca.trading.enums import AssetClass, OrderSide, TimeInForce, OrderClass, OrderType, OrderStatus
 from .config import get_api_key
 from .alpaca_exceptions import AlpacaAuthError
 
@@ -1053,6 +1055,42 @@ class AlpacaUtils:
             }
         except Exception as exc:
             return {"success": False, "error": str(exc)}
+
+    @staticmethod
+    def replace_order_qty(order_id: str, new_qty: int) -> dict:
+        """Replace an open order's qty. Returns success/error dict."""
+        try:
+            client = get_alpaca_trading_client()
+            client.replace_order_by_id(order_id, ReplaceOrderRequest(qty=new_qty))
+            return {"success": True, "order_id": order_id}
+        except Exception as exc:
+            return {"success": False, "order_id": order_id, "error": str(exc)}
+
+    @staticmethod
+    def get_bracket_legs(parent_order_id: str) -> dict:
+        """Return {"take_profit": Order|None, "stop_loss": Order|None} for a bracket parent.
+
+        Fetches the parent with nested=True and classifies legs: the LIMIT leg
+        is the take-profit, the STOP or STOP_LIMIT leg is the stop-loss.
+        """
+        try:
+            client = get_alpaca_trading_client()
+            parent = client.get_order_by_id(
+                parent_order_id, GetOrderByIdRequest(nested=True)
+            )
+        except Exception as exc:
+            return {"take_profit": None, "stop_loss": None, "error": str(exc)}
+
+        legs = parent.legs or []
+        take_profit = None
+        stop_loss = None
+        for leg in legs:
+            leg_type = leg.type if isinstance(leg.type, str) else (leg.type.value if leg.type else "")
+            if leg_type == OrderType.LIMIT.value:
+                take_profit = leg
+            elif leg_type in (OrderType.STOP.value, OrderType.STOP_LIMIT.value):
+                stop_loss = leg
+        return {"take_profit": take_profit, "stop_loss": stop_loss}
 
     @staticmethod
     def get_scanner_orders(

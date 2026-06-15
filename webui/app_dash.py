@@ -154,6 +154,10 @@ def create_app():
     from webui.utils.auto_scan_scheduler import start_auto_scan_scheduler
     start_auto_scan_scheduler(_app_state)
 
+    # Start bracket-leg adjuster: resizes OCO legs when entry partially fills
+    from tradingagents.dataflows.alpaca_stream import start_bracket_leg_adjuster
+    start_bracket_leg_adjuster()
+
     return app
 
 
