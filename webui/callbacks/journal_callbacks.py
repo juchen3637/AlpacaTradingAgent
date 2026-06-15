@@ -674,9 +674,12 @@ def register_journal_callbacks(app):
 
     @app.callback(
         Output("journal-ticker-filter", "options"),
-        Input("journal-refresh-btn", "n_clicks"),
+        [
+            Input("journal-refresh-btn", "n_clicks"),
+            Input("slow-refresh-interval", "n_intervals"),
+        ],
     )
-    def _populate_ticker_options(_n):
+    def _populate_ticker_options(_n, _intervals):
         try:
             tickers = get_journal().get_all_tickers()
         except Exception as e:
@@ -694,13 +697,14 @@ def register_journal_callbacks(app):
         ],
         [
             Input("journal-refresh-btn", "n_clicks"),
+            Input("slow-refresh-interval", "n_intervals"),
             Input("journal-ticker-filter", "value"),
             Input("journal-signal-filter", "value"),
             Input("journal-source-filter", "value"),
             Input("journal-limit-filter", "value"),
         ],
     )
-    def _refresh_log(_n, ticker, signal, source, limit):
+    def _refresh_log(_n, _intervals, ticker, signal, source, limit):
         try:
             journal = get_journal()
             decisions = journal.get_decisions(

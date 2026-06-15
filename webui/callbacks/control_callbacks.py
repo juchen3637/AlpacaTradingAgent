@@ -149,6 +149,15 @@ def _run_market_hour_loop(symbols, config, hours):
         for symbol in effective_symbols:
             app_state.init_symbol_state(symbol)
 
+        # Propagate trading config captured at scan-start into app_state so that
+        # run_analysis() sees the correct values after reset_for_loop() clears them.
+        app_state.trade_enabled = config.get('trade_enabled', False)
+        app_state.trade_amount = config.get('trade_amount', 1000)
+        app_state.use_ai_sizing = config.get('use_ai_sizing', True)
+        app_state.use_stop_loss = config.get('use_stop_loss', True)
+        app_state.use_take_profit = config.get('use_take_profit', True)
+        app_state.use_bracket_orders = config.get('use_bracket_orders', False)
+
         # ── Phase 3: per-ticker re-analysis cooldown ──
         # UI-driven Cost Controls override the static defaults; fall back when absent.
         gate_cfg = {
