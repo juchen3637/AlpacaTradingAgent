@@ -224,7 +224,7 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
         print(f"[TRADE] ═══════════════════════════════════════════════════")
         print(f"[TRADE] Executing trade for {ticker}:")
         print(f"[TRADE]   Signal: {recommended_action}")
-        print(f"[TRADE]   Amount: ${actual_trade_amount:.2f}")
+        print(f"[TRADE]   Amount: ${actual_trade_amount:.2f}" if actual_trade_amount is not None else "[TRADE]   Amount: uncapped")
         print(f"[TRADE]   Stop Loss: ${final_stop_loss:.2f}" if final_stop_loss else f"[TRADE]   Stop Loss: DISABLED (toggle: {use_stop_loss})")
         print(f"[TRADE]   Take Profit: {[f'${t:.2f}' for t in final_take_profit]}" if final_take_profit else f"[TRADE]   Take Profit: DISABLED (toggle: {use_take_profit})")
         print(f"[TRADE] ═══════════════════════════════════════════════════")
