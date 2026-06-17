@@ -85,6 +85,7 @@ def _run_market_open_scan(app_state) -> None:
         logger.info("[AUTO-SCAN] Running market-open scan...")
         from tradingagents.scanner.models import ScanFilters
         from tradingagents.scanner.pipeline import ScannerPipeline
+        from tradingagents.scanner.data_provider import AlpacaDataProvider
 
         filters = ScanFilters(
             universe_kind="most_active",
@@ -93,7 +94,7 @@ def _run_market_open_scan(app_state) -> None:
             price_max=1000.0,
             catalyst_only=False,
         )
-        results = ScannerPipeline().run(filters) or []
+        results = ScannerPipeline(AlpacaDataProvider()).run(filters) or []
         app_state.market_open_scan_results = results
         app_state.market_open_scan_ran_at = datetime.now(_EASTERN)
         logger.info("[AUTO-SCAN] Market-open scan done: %d results", len(results))
@@ -103,6 +104,34 @@ def _run_market_open_scan(app_state) -> None:
         app_state.market_open_scan_ran_at = datetime.now(_EASTERN)
     finally:
         app_state.auto_scan_running = False
+
+
+def trigger_premarket_scan(app_state) -> bool:
+    """Manually trigger a pre-market scan in a background thread. Returns False if one is already running."""
+    if app_state.auto_scan_running:
+        return False
+    thread = threading.Thread(
+        target=_run_premarket_scan,
+        args=(app_state,),
+        daemon=True,
+        name="manual-premarket-scan",
+    )
+    thread.start()
+    return True
+
+
+def trigger_market_open_scan(app_state) -> bool:
+    """Manually trigger a market-open scan in a background thread. Returns False if one is already running."""
+    if app_state.auto_scan_running:
+        return False
+    thread = threading.Thread(
+        target=_run_market_open_scan,
+        args=(app_state,),
+        daemon=True,
+        name="manual-market-open-scan",
+    )
+    thread.start()
+    return True
 
 
 def _scheduler_loop(app_state) -> None:
