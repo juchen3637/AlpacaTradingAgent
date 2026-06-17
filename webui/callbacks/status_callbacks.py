@@ -69,6 +69,10 @@ def register_status_callbacks(app):
                     status_icon = "🔄"
                     status_text = "IN PROGRESS"
                     status_color = COLORS["in_progress"]
+                elif status == "skipped":
+                    status_icon = "⏭️"
+                    status_text = "SKIPPED (cooldown)"
+                    status_color = COLORS["skipped"]
                 else:
                     status_icon = "⏸️"
                     status_text = "PENDING"

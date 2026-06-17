@@ -90,6 +90,10 @@ def get_ticker_phase(symbol, state):
     if any(agent_statuses.get(agent) in ["in_progress", "completed"] for agent in analyst_agents):
         return "Analysts"
 
+    # Cooldown-skipped: all agents are "skipped"
+    if all(v == "skipped" for v in agent_statuses.values()):
+        return "Skipped"
+
     # Default to Queued if no agents have started
     return "Queued"
 
@@ -194,6 +198,9 @@ def register_batch_callbacks(app):
             # Determine status icon
             if phase == "Complete":
                 icon = "✅"
+                row_color = None
+            elif phase == "Skipped":
+                icon = "⏭️"
                 row_color = None
             elif phase == "Queued":
                 icon = "⏸️"

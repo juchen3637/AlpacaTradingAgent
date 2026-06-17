@@ -14,6 +14,7 @@ COLORS = {
     "pending": "#94A3B8",         # Slate gray
     "in_progress": "#F59E0B",     # Amber/warning
     "completed": "#22C55E",       # Success green
+    "skipped": "#64748B",         # Muted slate for cooldown-skipped tickers
     "success": "#22C55E",         # Success green
     "error": "#EF4444",           # Danger red
     "warning": "#F59E0B",         # Warning amber

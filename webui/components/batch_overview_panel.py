@@ -38,7 +38,8 @@ def create_batch_overview_panel():
                 html.Small([
                     html.Span("✅ Complete", className="me-3"),
                     html.Span("🔄 In Progress", className="me-3"),
-                    html.Span("⏸️ Queued")
+                    html.Span("⏸️ Queued", className="me-3"),
+                    html.Span("⏭️ Skipped")
                 ], style={"color": "#64748B"})
             ], className="mt-2 text-center"),
             dcc.Store(id="batch-ticker-click-store")
