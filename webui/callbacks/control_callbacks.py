@@ -5,6 +5,7 @@ Control and configuration callbacks for TradingAgents WebUI
 from dash import Input, Output, State, ctx, html
 import dash_bootstrap_components as dbc
 import dash
+import logging
 import math
 import threading
 import time
@@ -16,6 +17,8 @@ from webui.components.analysis import start_analysis
 from webui.utils.reanalysis_gate import should_reanalyze, record_analysis
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 from tradingagents.default_config import DEFAULT_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 def process_symbols_in_parallel_batches(
@@ -106,7 +109,7 @@ def _run_market_hour_loop(symbols, config, hours):
         first_run = False
 
         if not run_now:
-            print(f"[MARKET_HOUR] Next execution: {next_dt.strftime('%A, %B %d at %I:%M %p %Z')}")
+            logger.info("[MARKET_HOUR] Next execution: %s", next_dt.strftime('%A, %B %d at %I:%M %p %Z'))
             while datetime.datetime.now(tz=_pytz.UTC).astimezone(_eastern) < next_dt and not app_state.stop_market_hour:
                 time.sleep(30)
 
@@ -114,7 +117,7 @@ def _run_market_hour_loop(symbols, config, hours):
             break
 
         fire_hour = next_dt.hour if not run_now else now.hour
-        print(f"[MARKET_HOUR] Running analysis at {fire_hour}:00 EST/EDT")
+        logger.info("[MARKET_HOUR] Running analysis at %d:00 EST/EDT", fire_hour)
 
         # ── AI Picked Stocks: discover at 9/12/15 EST, reuse cached picks otherwise ──
         effective_symbols = list(symbols)
@@ -139,15 +142,38 @@ def _run_market_hour_loop(symbols, config, hours):
                 app_state.ai_picks_status = ai_only if ai_only else None
                 app_state.ai_picks_source = source_label
                 publish_plays_to_speculation_state(ai_plays, source_label)
-                print(f"[AI_PICKS] Discovered {len(ai_only)} AI ticker(s) at {fire_hour}:00: {ai_only}")
+                logger.info("[AI_PICKS] Discovered %d AI ticker(s) at %d:00: %s", len(ai_only), fire_hour, ai_only)
             else:
                 cached = AI_PICKS_STATE.get_tickers()
                 effective_symbols = merge_tickers(symbols, cached)
-                print(f"[AI_PICKS] Reusing {len(cached)} cached AI ticker(s) at {fire_hour}:00: {cached}")
+                logger.info("[AI_PICKS] Reusing %d cached AI ticker(s) at %d:00: %s", len(cached), fire_hour, cached)
+
+        # Always include open Alpaca positions so they're never orphaned from
+        # health-checks when the AI stops picking them or they fall off the watchlist.
+        try:
+            open_positions = AlpacaUtils.get_positions_data() or []
+            open_tickers = [p["symbol"] for p in open_positions if p.get("symbol")]
+            if open_tickers:
+                before = set(effective_symbols)
+                effective_symbols = list(dict.fromkeys(effective_symbols + open_tickers))
+                added = [t for t in open_tickers if t not in before]
+                if added:
+                    logger.info("[POSITION_GUARD] Added %d open position(s) to scan: %s", len(added), added)
+        except Exception as exc:
+            logger.warning("[POSITION_GUARD] Could not fetch open positions: %s", exc)
 
         app_state.reset_for_loop()
         for symbol in effective_symbols:
             app_state.init_symbol_state(symbol)
+
+        # Propagate trading config captured at scan-start into app_state so that
+        # run_analysis() sees the correct values after reset_for_loop() clears them.
+        app_state.trade_enabled = config.get('trade_enabled', False)
+        app_state.trade_amount = config.get('trade_amount', 1000)
+        app_state.use_ai_sizing = config.get('use_ai_sizing', True)
+        app_state.use_stop_loss = config.get('use_stop_loss', True)
+        app_state.use_take_profit = config.get('use_take_profit', True)
+        app_state.use_bracket_orders = config.get('use_bracket_orders', False)
 
         # ── Phase 3: per-ticker re-analysis cooldown ──
         # UI-driven Cost Controls override the static defaults; fall back when absent.
@@ -173,10 +199,15 @@ def _run_market_hour_loop(symbols, config, hours):
             else:
                 skipped.append(sym)
         if skipped:
-            print(f"[REANALYSIS_GATE] Skipping {len(skipped)} ticker(s) within cooldown: {skipped}")
+            logger.info("[REANALYSIS_GATE] Skipping %d ticker(s) within cooldown: %s", len(skipped), skipped)
+            for sym in skipped:
+                state = app_state.symbol_states.get(sym)
+                if state:
+                    for agent in state["agent_statuses"]:
+                        state["agent_statuses"][agent] = "skipped"
 
         if not eligible:
-            print(f"[MARKET_HOUR] No tickers eligible to re-analyze this cycle.")
+            logger.info("[MARKET_HOUR] No tickers eligible to re-analyze this cycle.")
         else:
             # ── Phase 2: partition into held vs entry ──
             # Held positions get a lightweight news+price-only check on the quick LLM;
@@ -200,9 +231,9 @@ def _run_market_hour_loop(symbols, config, hours):
                     else:
                         entry_symbols.append(sym)
                 if held_symbols:
-                    print(f"[HEALTH_CHECK] Held positions on lightweight path: {held_symbols}")
+                    logger.info("[HEALTH_CHECK] Held positions on lightweight path: %s", held_symbols)
                 if entry_symbols:
-                    print(f"[ENTRY_PATH] Entry candidates on full path: {entry_symbols}")
+                    logger.info("[ENTRY_PATH] Entry candidates on full path: %s", entry_symbols)
             else:
                 entry_symbols = list(eligible)
 
@@ -267,7 +298,7 @@ def _run_market_hour_loop(symbols, config, hours):
                     record_analysis(sym, app_state, price=None)
 
         if not app_state.stop_market_hour:
-            print(f"[MARKET_HOUR] Analysis complete for {fire_hour}:00. Scheduling next run...")
+            logger.info("[MARKET_HOUR] Analysis complete for %d:00. Scheduling next run...", fire_hour)
 
     app_state.analysis_running = False
 

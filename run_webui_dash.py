@@ -91,11 +91,19 @@ def main():
 
     def _shutdown_handler(signum, frame):
         import logging
-        from webui.utils.state import app_state
+        from webui.utils.state import app_state, _save_market_hour_state
         from tradingagents.dataflows.alpaca_stream import stop_bracket_leg_adjuster
         logging.getLogger(__name__).info(
             "Received shutdown signal, shutting down gracefully"
         )
+        # Re-persist market-hour state before stopping so the next startup
+        # can auto-resume. stop_market_hour_mode() would clear it otherwise.
+        if app_state.market_hour_enabled:
+            _save_market_hour_state(
+                app_state.market_hour_symbols,
+                app_state.market_hour_config,
+                app_state.market_hours,
+            )
         stop_bracket_leg_adjuster()
         app_state.stop_loop_mode()
         app_state.stop_market_hour_mode()

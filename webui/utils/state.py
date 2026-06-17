@@ -278,7 +278,7 @@ class AppState:
         state = self.get_state(symbol)
         if state:
             if agent in state["agent_statuses"]:
-                if status not in ["pending", "in_progress", "completed"]:
+                if status not in ["pending", "in_progress", "completed", "skipped"]:
                     print(f"Warning: Invalid status '{status}' for agent '{agent}', defaulting to 'pending'")
                     status = "pending"
                 
