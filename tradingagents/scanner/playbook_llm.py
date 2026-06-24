@@ -16,7 +16,7 @@ import json
 from pydantic import BaseModel, Field, field_validator
 
 from ._llm_factory import get_llm as _get_llm
-from .constants import SHORT_STRATEGIES, STRATEGY_RULES
+from .constants import PREMARKET_MOVER, SHORT_STRATEGIES, STRATEGY_RULES
 from .models import Playbook, ScanResult, TickerSnapshot
 
 logger = logging.getLogger(__name__)
@@ -392,3 +392,38 @@ def generate_playbook(
     except Exception as exc:
         logger.warning("Playbook LLM failed (%s) — returning fallback", exc)
         return _fallback_playbook(scan_result)
+
+
+def generate_premarket_playbook(
+    mover: dict,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Playbook:
+    """Generate an AI playbook from a premarket mover dict (from get_premarket_movers).
+
+    Constructs a minimal ScanResult from the mover data and delegates to
+    generate_playbook with the PREMARKET_MOVER strategy.
+    """
+    from .models import KeyLevels
+
+    symbol = mover["symbol"]
+    premarket_last = float(mover.get("premarket_last") or mover.get("last_price") or 0)
+    prev_close = float(mover.get("prev_close") or 0)
+
+    snap = TickerSnapshot(
+        symbol=symbol,
+        is_crypto=False,
+        last_price=premarket_last,
+        change_pct=float(mover.get("premarket_pct") or 0),
+        premarket_volume=mover.get("premarket_volume"),
+        has_catalyst=bool(mover.get("has_catalyst")),
+        catalyst_text=mover.get("catalyst_text"),
+        levels=KeyLevels(pdl=prev_close),
+    )
+    scan_result = ScanResult(
+        snapshot=snap,
+        strategy_id=PREMARKET_MOVER,
+        strategy_name="Premarket Gap Play",
+        score=min(abs(snap.change_pct) / 10.0, 1.0),
+    )
+    return generate_playbook(scan_result, provider=provider, model=model)

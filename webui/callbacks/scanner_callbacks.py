@@ -396,12 +396,35 @@ def register_scanner_callbacks(app):
         return table_rows, stats, rows, []
 
     @app.callback(
-        Output("scanner-playbook-btn", "disabled"),
-        Input("scanner-results-table", "selected_rows"),
+        Output("scanner-active-table", "data"),
+        [
+            Input("scanner-results-table", "selected_rows"),
+            Input("auto-scan-premarket-table", "selected_rows"),
+            Input("auto-scan-market-open-table", "selected_rows"),
+        ],
         prevent_initial_call=True,
     )
-    def toggle_playbook_button(selected_rows):
-        return not selected_rows
+    def track_active_table(scan_rows, pre_rows, mo_rows):
+        from dash import ctx
+        triggered = ctx.triggered_id
+        if triggered == "scanner-results-table" and scan_rows:
+            return {"table": "qualifying", "row": scan_rows[0]}
+        if triggered == "auto-scan-premarket-table" and pre_rows:
+            return {"table": "premarket", "row": pre_rows[0]}
+        if triggered == "auto-scan-market-open-table" and mo_rows:
+            return {"table": "market_open", "row": mo_rows[0]}
+        return no_update
+
+    @app.callback(
+        Output("scanner-playbook-btn", "disabled"),
+        [
+            Input("scanner-results-table", "selected_rows"),
+            Input("auto-scan-premarket-table", "selected_rows"),
+            Input("auto-scan-market-open-table", "selected_rows"),
+        ],
+    )
+    def toggle_playbook_button(scan_rows, pre_rows, mo_rows):
+        return not (scan_rows or pre_rows or mo_rows)
 
     @app.callback(
         [
@@ -511,8 +534,13 @@ def register_scanner_callbacks(app):
         Output("scanner-playbook-output", "children"),
         Input("scanner-playbook-btn", "n_clicks"),
         [
+            State("scanner-active-table", "data"),
             State("scanner-results-table", "selected_rows"),
             State("scanner-results-store", "data"),
+            State("auto-scan-premarket-table", "selected_rows"),
+            State("auto-scan-premarket-table", "data"),
+            State("auto-scan-market-open-table", "selected_rows"),
+            State("auto-scan-market-open-table", "data"),
             State("scanner-llm-provider", "value"),
             State("scanner-llm-model", "value"),
         ],
@@ -523,25 +551,76 @@ def register_scanner_callbacks(app):
         ],
         prevent_initial_call=True,
     )
-    def generate_playbook(n_clicks, selected_rows, rows, provider, model):
-        if not n_clicks or not selected_rows or not rows:
+    def generate_playbook(n_clicks, active_table,
+                          scan_rows, scan_data,
+                          pre_rows, pre_data, mo_rows, mo_data,
+                          provider, model):
+        if not n_clicks:
             return no_update
 
-        row = rows[selected_rows[0]]
+        active = (active_table or {}).get("table")
+
+        # Dispatch based on the table the user most recently selected from.
+        # Fall back to whichever table has a selection if the store is empty.
+        if active == "premarket" or (not active and pre_rows and pre_data):
+            if not pre_rows or not pre_data:
+                return html.Div("No premarket row selected.",
+                                style={"color": "#F59E0B"})
+            mover = pre_data[pre_rows[0]]
+            try:
+                from tradingagents.scanner.playbook_llm import generate_premarket_playbook
+                playbook = generate_premarket_playbook(mover, provider=provider, model=model)
+            except Exception as exc:
+                logger.exception("Premarket playbook generation failed")
+                return html.Div(f"Playbook generation failed: {exc}",
+                                style={"color": "#EF4444"})
+            return _format_playbook(playbook)
+
+        if active == "market_open" or (not active and mo_rows and mo_data):
+            if not mo_rows or not mo_data:
+                return html.Div("No market-open row selected.",
+                                style={"color": "#F59E0B"})
+            row = mo_data[mo_rows[0]]
+            symbol = row.get("symbol", "")
+            strategy_id = row.get("strategy_id", "")
+            scan_result = next(
+                (r for r in SCANNER_STATE.get_results()
+                 if r.snapshot.symbol == symbol and r.strategy_id == strategy_id),
+                None,
+            )
+            if scan_result is None:
+                return html.Div("Result no longer available. Re-run scan.",
+                                style={"color": "#F59E0B"})
+            current_scan_id = SCANNER_STATE.scan_id()
+            cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", current_scan_id)
+            if cached is not None:
+                return _format_playbook(cached)
+            try:
+                from tradingagents.scanner.playbook_llm import generate_playbook as llm_generate
+                playbook = llm_generate(scan_result, provider=provider, model=model)
+            except Exception as exc:
+                logger.exception("Market-open playbook generation failed")
+                return html.Div(f"Playbook generation failed: {exc}",
+                                style={"color": "#EF4444"})
+            SCANNER_STATE.set_playbook(symbol, strategy_id, playbook, model or "", current_scan_id)
+            return _format_playbook(playbook)
+
+        # Qualifying tickers (manual scan results table)
+        if not scan_rows or not scan_data:
+            return no_update
+        row = scan_data[scan_rows[0]]
         symbol = row["symbol"]
         strategy_id = row["strategy_id"]
 
-        # Pull the matching ScanResult out of state
-        scan_result = None
-        for r in SCANNER_STATE.get_results():
-            if r.snapshot.symbol == symbol and r.strategy_id == strategy_id:
-                scan_result = r
-                break
+        scan_result = next(
+            (r for r in SCANNER_STATE.get_results()
+             if r.snapshot.symbol == symbol and r.strategy_id == strategy_id),
+            None,
+        )
         if scan_result is None:
             return html.Div("Ticker no longer in latest scan. Re-run scan.",
                             style={"color": "#F59E0B"})
 
-        # Cache key includes scan_id so any new scan busts the playbook cache.
         current_scan_id = SCANNER_STATE.scan_id()
         cached = SCANNER_STATE.get_playbook(symbol, strategy_id, model or "", current_scan_id)
         if cached is not None:
@@ -1632,11 +1711,37 @@ def register_scanner_callbacks(app):
         return markdown
 
     @app.callback(
+        Output("rescan-premarket-btn", "n_clicks"),
+        Input("rescan-premarket-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _rescan_premarket(_n):
+        from webui.utils.state import app_state
+        from webui.utils.auto_scan_scheduler import trigger_premarket_scan
+        trigger_premarket_scan(app_state)
+        return no_update
+
+    @app.callback(
+        Output("rescan-market-open-btn", "n_clicks"),
+        Input("rescan-market-open-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _rescan_market_open(_n):
+        from webui.utils.state import app_state
+        from webui.utils.auto_scan_scheduler import trigger_market_open_scan
+        trigger_market_open_scan(app_state)
+        return no_update
+
+    @app.callback(
         [
             Output("auto-scan-premarket-table", "data"),
             Output("auto-scan-premarket-status", "children"),
             Output("auto-scan-market-open-table", "data"),
             Output("auto-scan-market-open-status", "children"),
+            Output("rescan-premarket-btn", "disabled"),
+            Output("rescan-premarket-btn", "children"),
+            Output("rescan-market-open-btn", "disabled"),
+            Output("rescan-market-open-btn", "children"),
         ],
         Input("refresh-interval", "n_intervals"),
     )
@@ -1693,7 +1798,9 @@ def register_scanner_callbacks(app):
                     "score": r.score,
                 })
 
-        return pre_rows, pre_status, mo_rows, mo_status
+        scanning = bool(app_state.auto_scan_running)
+        btn_label = "Scanning..." if scanning else "Rescan"
+        return pre_rows, pre_status, mo_rows, mo_status, scanning, btn_label, scanning, btn_label
 
     @app.callback(
         Output("scanner-watchlist", "value"),
@@ -1717,4 +1824,5 @@ def register_scanner_callbacks(app):
             symbol = mo_data[mo_rows_sel[0]].get("symbol", "")
             return symbol
         return no_update
+
 

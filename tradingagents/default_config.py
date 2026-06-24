@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     # premarket_volume is unavailable. Scanner strategies ORB, VWAP_RECLAIM work fine
     # on IEX (post-9:30 data); day-trading playbooks should weight those over ATH_BREAKOUT.
     # Stop loss and take profit settings
+    "use_bracket_orders": True,  # Use native Alpaca bracket orders (entry + SL + TP as one atomic order)
     "use_stop_loss": True,  # Enable stop loss orders
     "use_take_profit": True,  # Enable take profit orders
     "stop_loss_order_type": "stop",  # "stop" or "stop_limit"
@@ -65,4 +66,28 @@ DEFAULT_CONFIG = {
     "alpaca_secret_key": None,
     "alpaca_use_paper": "True",  # Set to "True" to use paper trading, "False" for live trading
     "coindesk_api_key": None,
+    # Ghetto Standard Deviation options analyzer — all thresholds tunable here.
+    # Verdict bands are keyed off cost-per-contract (ask * 100). Canonical source
+    # is the screener-table spec (Valid <100 / Borderline 100-150 / Too Expensive
+    # >150 / Too Far OTM <20).
+    "ghetto_sd": {
+        "too_far_otm_cost": 20.0,      # cost < this  → 🚫 Too Far OTM
+        "valid_max_cost": 100.0,       # cost <= this → ✅ Valid Play (and >= too_far)
+        "borderline_max_cost": 150.0,  # cost <= this → ⚠️ Borderline; above → ❌ Too Expensive
+        "ideal_min_cost": 30.0,        # advisory ideal range lower bound
+        "two_sd_zone_pct": 5.0,        # strike within ±N% of target → "in 2SD zone"
+        "low_price_warn": 50.0,        # stock under this → prominent overpay warning (the core rule)
+        "earnings_week_days": 7,       # expiry within N days AFTER earnings → "week-of" / ideal
+        "liquidity_spread_pct": 30.0,  # bid/ask spread > N% of ask → liquidity warning
+        "suitability_base": 5,         # base score before +/- deltas, clamped to 1..10
+    },
+    # Ghetto SD scanner: sweep a universe and surface tickers that clear all gates.
+    "ghetto_sd_scan": {
+        "universe_size": 25,    # most-actives to sweep (caps latency / rate limits)
+        "min_price": 20.0,      # skip sub-$N tickers (penny stocks / leveraged ETFs)
+        "min_suitability": 6,   # gate: suitability score >= this
+        "max_2sd_cost": 100.0,  # gate: best Valid Play 2SD cost-per-contract <= this
+        "min_dte": 1,           # nearest-expiration floor (skip 0 DTE)
+        "max_workers": 8,       # parallel per-ticker fetch workers
+    },
 }

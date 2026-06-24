@@ -3,8 +3,31 @@ import json
 from datetime import datetime, timedelta
 from typing import Annotated, Dict, List, Optional
 from .config import get_api_key, DATA_DIR
+from .cache_utils import with_cache
 import os
 import pandas as pd
+
+
+@with_cache(cache_category="next_earnings", max_age_hours=24)
+def get_next_earnings_date(symbol: str) -> Optional[str]:
+    """Next upcoming earnings date as an ISO string, or None.
+
+    yfinance-backed; stocks only. Returns the soonest scheduled date on/after today,
+    falling back to the most recent known date. Any failure returns None.
+    """
+    try:
+        import yfinance as yf
+
+        cal = yf.Ticker(symbol).calendar
+        raw = cal.get("Earnings Date") if isinstance(cal, dict) else None
+        dates = [d for d in (raw or []) if hasattr(d, "isoformat")]
+        if not dates:
+            return None
+        today = datetime.now().date()
+        upcoming = sorted(d for d in dates if d >= today)
+        return (upcoming[0] if upcoming else sorted(dates)[-1]).isoformat()
+    except Exception:
+        return None
 
 
 def get_finnhub_earnings_calendar(

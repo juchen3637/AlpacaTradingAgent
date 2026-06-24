@@ -20,7 +20,10 @@ BREAKDOWN = "BREAKDOWN"
 
 SHORT_STRATEGIES = {PDH_REJECTION, VWAP_FADE, BREAKDOWN}
 
+PREMARKET_MOVER = "PREMARKET_MOVER"
+
 STRATEGY_NAMES: dict[str, str] = {
+    PREMARKET_MOVER: "Premarket Gap Play",
     ATH_BREAKOUT: "ATH Breakout",
     SMA10_MACD: "10-SMA + MACD Crossover",
     SPY_0DTE_FADE: "SPY 0DTE PDH/PDL Fade",
@@ -34,6 +37,13 @@ STRATEGY_NAMES: dict[str, str] = {
 }
 
 STRATEGY_RULES: dict[str, str] = {
+    PREMARKET_MOVER: (
+        "Premarket gap play — ticker moved significantly before the open. "
+        "Plan entry at or just after the open based on premarket price action. "
+        "Gap-up: watch for confirmation above premarket high or VWAP reclaim. "
+        "Gap-down: watch for fade below premarket low. "
+        "Stop beyond the premarket range extremes. Target: 1x gap fill, then extension."
+    ),
     PDH_REJECTION: (
         "Short on confirmed rejection of the previous-day high (PDH). Enter on "
         "first 1m close back below PDH after a wick or failed breakout. Stop above "
