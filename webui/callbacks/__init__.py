@@ -18,6 +18,7 @@ from .scanner_callbacks import register_scanner_callbacks
 from .longterm_callbacks import register_longterm_callbacks
 from .plays_callbacks import register_plays_callbacks
 from .speculation_callbacks import register_speculation_callbacks
+from .ghetto_sd_callbacks import register_ghetto_sd_callbacks
 
 def register_all_callbacks(app):
     """Register all callback functions with the Dash app"""
@@ -36,3 +37,4 @@ def register_all_callbacks(app):
     register_longterm_callbacks(app)
     register_plays_callbacks(app)
     register_speculation_callbacks(app)
+    register_ghetto_sd_callbacks(app)

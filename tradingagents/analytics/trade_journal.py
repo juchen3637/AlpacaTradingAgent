@@ -142,6 +142,8 @@ class DecisionRecord:
     conviction: float | None = None          # 0..1 extracted from agent output
     llm_cost_estimate: float | None = None   # estimated USD cost for this decision's LLM calls
     gate_rejection_reason: str | None = None # set when safety gate blocked the trade
+    exit_gate_result: str | None = None      # set when position guard evaluated (open positions only)
+    trade_notes: str | None = None           # warnings about trade execution (e.g. bracket fallback)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -195,6 +197,10 @@ class TradeJournal:
                 conn.execute("ALTER TABLE decisions ADD COLUMN llm_cost_estimate REAL")
             if "gate_rejection_reason" not in existing_cols:
                 conn.execute("ALTER TABLE decisions ADD COLUMN gate_rejection_reason TEXT")
+            if "exit_gate_result" not in existing_cols:
+                conn.execute("ALTER TABLE decisions ADD COLUMN exit_gate_result TEXT")
+            if "trade_notes" not in existing_cols:
+                conn.execute("ALTER TABLE decisions ADD COLUMN trade_notes TEXT")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_decisions_source ON decisions(source)"
             )
@@ -232,8 +238,8 @@ class TradeJournal:
                     selected_analysts, research_depth, llm_provider,
                     quick_llm, deep_llm, execution_time_seconds, allow_shorts,
                     source, source_order_id,
-                    conviction, llm_cost_estimate, gate_rejection_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    conviction, llm_cost_estimate, gate_rejection_reason, exit_gate_result, trade_notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.timestamp, record.ticker, record.trade_date, record.signal,
@@ -249,6 +255,7 @@ class TradeJournal:
                     1 if record.allow_shorts else 0,
                     record.source, record.source_order_id,
                     record.conviction, record.llm_cost_estimate, record.gate_rejection_reason,
+                    record.exit_gate_result, record.trade_notes,
                 ),
             )
             return int(cur.lastrowid)
@@ -259,6 +266,22 @@ class TradeJournal:
             conn.execute(
                 "UPDATE decisions SET gate_rejection_reason = ? WHERE id = ?",
                 (reason, decision_id),
+            )
+
+    def update_decision_exit_gate(self, decision_id: int, result: str) -> None:
+        """Stamp a decision row with the position-guard (exit gate) outcome."""
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE decisions SET exit_gate_result = ? WHERE id = ?",
+                (result, decision_id),
+            )
+
+    def update_decision_trade_notes(self, decision_id: int, notes: str) -> None:
+        """Append a trade execution warning/note to a decision row."""
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE decisions SET trade_notes = ? WHERE id = ?",
+                (notes, decision_id),
             )
 
     def record_trade(self, record: TradeRecord) -> int:
@@ -321,11 +344,14 @@ class TradeJournal:
         signal: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-        source: str | None = None,
+        source: str | list[str] | None = None,
         exclude_source: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
-        """Return decisions filtered by ticker/signal/date range/source."""
+        """Return decisions filtered by ticker/signal/date range/source.
+
+        ``source`` accepts a single value or a list (matched with IN).
+        """
         query = "SELECT * FROM decisions WHERE 1=1"
         params: list[Any] = []
 
@@ -342,8 +368,14 @@ class TradeJournal:
             query += " AND timestamp <= ?"
             params.append(end_date)
         if source:
-            query += " AND COALESCE(source, 'agent') = ?"
-            params.append(source)
+            if isinstance(source, (list, tuple, set)):
+                sources = list(source)
+                placeholders = ", ".join("?" for _ in sources)
+                query += f" AND COALESCE(source, 'agent') IN ({placeholders})"
+                params.extend(sources)
+            else:
+                query += " AND COALESCE(source, 'agent') = ?"
+                params.append(source)
         if exclude_source:
             query += " AND COALESCE(source, 'agent') != ?"
             params.append(exclude_source)
@@ -382,7 +414,7 @@ class TradeJournal:
         self,
         *,
         ticker: str | None = None,
-        source: str | None = None,
+        source: str | list[str] | None = None,
         exclude_source: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:

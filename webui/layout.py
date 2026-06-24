@@ -21,6 +21,7 @@ from webui.components.scanner_page import create_scanner_page
 from webui.components.longterm_page import create_longterm_page
 from webui.components.plays_page import create_plays_page
 from webui.components.speculation_page import create_speculation_page
+from webui.components.ghetto_sd_page import create_ghetto_sd_page
 from webui.config.constants import COLORS, REFRESH_INTERVALS
 
 
@@ -162,6 +163,10 @@ def _create_scanner_page():
                 dbc.Tab(create_speculation_page(),
                         label="Speculation",
                         tab_id="trading-speculation",
+                        tabClassName="trading-subtab"),
+                dbc.Tab(create_ghetto_sd_page(),
+                        label="Ghetto SD",
+                        tab_id="trading-ghetto-sd",
                         tabClassName="trading-subtab"),
             ],
             id="trading-subtabs",

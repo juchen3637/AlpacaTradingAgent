@@ -269,7 +269,21 @@ def _build_decision_detail(decision: dict[str, Any] | None):
                       style={"fontSize": "11px", "color": "#94A3B8"}),
         ], style={"marginBottom": "16px", "paddingBottom": "12px",
                   "borderBottom": "1px solid rgba(51, 65, 85, 0.5)"}),
-    ])
+    ] + ([
+        html.Div(
+            decision["trade_notes"],
+            style={
+                "padding": "10px 14px",
+                "marginBottom": "12px",
+                "backgroundColor": "rgba(245, 158, 11, 0.12)",
+                "border": "1px solid rgba(245, 158, 11, 0.4)",
+                "borderRadius": "6px",
+                "color": "#F59E0B",
+                "fontSize": "12px",
+                "fontWeight": "600",
+            },
+        )
+    ] if decision.get("trade_notes") else []))
 
     # Agent reasoning accordion
     accordion = dbc.Accordion(
@@ -296,6 +310,8 @@ def _build_decision_detail(decision: dict[str, Any] | None):
                             decision.get("risk_debate_summary"), "risk"),
             _accordion_item("✅ Final Decision",
                             decision.get("final_decision"), "final"),
+            _accordion_item("🔒 Position Guard (Exit Gate)",
+                            decision.get("exit_gate_result"), "exit_gate"),
         ],
         start_collapsed=True,
         always_open=False,
@@ -700,17 +716,19 @@ def register_journal_callbacks(app):
             Input("slow-refresh-interval", "n_intervals"),
             Input("journal-ticker-filter", "value"),
             Input("journal-signal-filter", "value"),
-            Input("journal-source-filter", "value"),
+            Input("journal-tab", "active_tab"),
             Input("journal-limit-filter", "value"),
         ],
     )
-    def _refresh_log(_n, _intervals, ticker, signal, source, limit):
+    def _refresh_log(_n, _intervals, ticker, signal, tab, limit):
+        # Analysis tab folds in legacy Alpaca-history backfill rows.
+        source = {"agent": ["agent", "backfill"]}.get(tab, tab or "agent")
         try:
             journal = get_journal()
             decisions = journal.get_decisions(
                 ticker=ticker,
                 signal=None if not signal or signal == "ALL" else signal,
-                source=None if not source or source == "ALL" else source,
+                source=source,
                 limit=int(limit or 100),
             )
             # Attach outcomes and trades so the table can show P&L and trade counts
