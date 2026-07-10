@@ -100,10 +100,24 @@ def _auto_scans_section():
                 dbc.AccordionItem(
                     [
                         html.Div(
-                            id="auto-scan-premarket-status",
-                            style={"fontSize": "12px", "color": "#94A3B8",
-                                   "marginBottom": "10px"},
-                            children="Runs automatically at 8:00 AM ET on market days.",
+                            [
+                                html.Div(
+                                    id="auto-scan-premarket-status",
+                                    style={"fontSize": "12px", "color": "#94A3B8",
+                                           "flex": "1"},
+                                    children="Runs automatically at 8:00 AM ET on market days.",
+                                ),
+                                dbc.Button(
+                                    "Rescan",
+                                    id="rescan-premarket-btn",
+                                    size="sm",
+                                    color="warning",
+                                    outline=True,
+                                    style={"fontSize": "11px", "padding": "2px 10px"},
+                                ),
+                            ],
+                            style={"display": "flex", "alignItems": "center",
+                                   "gap": "10px", "marginBottom": "10px"},
                         ),
                         dash_table.DataTable(
                             id="auto-scan-premarket-table",
@@ -156,10 +170,24 @@ def _auto_scans_section():
                 dbc.AccordionItem(
                     [
                         html.Div(
-                            id="auto-scan-market-open-status",
-                            style={"fontSize": "12px", "color": "#94A3B8",
-                                   "marginBottom": "10px"},
-                            children="Runs automatically at 9:45 AM ET on market days.",
+                            [
+                                html.Div(
+                                    id="auto-scan-market-open-status",
+                                    style={"fontSize": "12px", "color": "#94A3B8",
+                                           "flex": "1"},
+                                    children="Runs automatically at 9:45 AM ET on market days.",
+                                ),
+                                dbc.Button(
+                                    "Rescan",
+                                    id="rescan-market-open-btn",
+                                    size="sm",
+                                    color="primary",
+                                    outline=True,
+                                    style={"fontSize": "11px", "padding": "2px 10px"},
+                                ),
+                            ],
+                            style={"display": "flex", "alignItems": "center",
+                                   "gap": "10px", "marginBottom": "10px"},
                         ),
                         dash_table.DataTable(
                             id="auto-scan-market-open-table",
@@ -631,6 +659,7 @@ def _chart_panel():
             ),
             html.Div(
                 id="scanner-chart",
+                className="chart-host",
                 style={"width": "100%", "height": "400px"},
             ),
             dcc.Store(id="scanner-chart-payload"),
@@ -656,9 +685,16 @@ def _chart_panel():
                 disabled=False,
                 n_intervals=0,
             ),
+        html.Button(
+            html.Span("fullscreen", className="material-symbols-outlined",
+                      style={"fontSize": "18px", "lineHeight": "1"}),
+            className="chart-fullscreen-btn",
+            title="Fullscreen (Esc to exit)",
+        ),
         ],
         id="scanner-chart-wrapper",
-        style={"display": "none"},  # Hidden until playbook renders
+        **{"data-fs-wrapper": "true"},
+        style={"display": "none", "position": "relative"},
     )
 
 
@@ -1043,6 +1079,7 @@ def create_scanner_page():
             dcc.Store(id="scanner-pending-execution"),
             dcc.Store(id="scanner-order-state", data={"unfilled_count": 0,
                                                        "has_position": False}),
+            dcc.Store(id="scanner-active-table", data=None),
             _auto_scans_section(),
             _filters_card(),
             _results_card(),

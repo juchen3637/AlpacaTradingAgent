@@ -1,0 +1,38 @@
+ORIGINAL PLAYBOOK (saved earlier)
+  Symbol: NVDA
+  Strategy: ATH_BREAKOUT
+  Thesis: Breakout above ATH on heavy volume confirms continuation.
+  Qualification reason: Within 0.4% of ATH and RVOL is 3.1x with a fresh earnings catalyst.
+  Confidence reason: Three confluent signals aligned — catalyst, RVOL, and ATH proximity.
+  Order type: Buy Stop
+  Entry: $920.50
+  Stop: $905.00
+  PT1: $940.00
+  PT2: $960.00
+  R:R: 2.60
+  Position size: 5.0% of BP
+  Indicators to watch: VWAP, RVOL, PDH
+  Invalidation: Loss of VWAP on heavy volume.
+  Original confidence: high
+
+AT SAVE TIME (scan row)
+  Price: $920.55
+  RVOL: 3.10
+  Catalyst: Earnings 2026-05-07
+
+CURRENT MARKET SNAPSHOT
+  Price now: $935.20
+  Change vs save price: +1.59%
+  Change today: +2.40%
+  RVOL now: 2.40
+  Catalyst now: Earnings beat — guidance raised
+
+RECENT NEWS (last 24h, up to 5 headlines)
+  - NVIDIA tops Q1 estimates, raises guidance — Reuters
+  - Analysts bump NVDA price target to $1000 — Bloomberg
+
+LIVE ALPACA STATE
+  Position: LONG 100.00 @ $920.50 · unrealized P/L $1,470.00 (+0.02%)
+  Unfilled orders: none
+
+Decide: is the original thesis still viable now? Recommend ONE action.

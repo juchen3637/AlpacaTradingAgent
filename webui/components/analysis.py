@@ -220,6 +220,15 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                 reason = "no valid stop/target prices extracted from analysis"
             print(f"[TRADE] ⚠️ {ticker}: No valid stop/bracket prices — {reason}. Executing {recommended_action} entry-only (no stop/bracket).")
             use_bracket_orders = False
+            _notes_decision_id = state.get("journal_decision_id")
+            if _notes_decision_id:
+                try:
+                    get_journal().update_decision_trade_notes(
+                        _notes_decision_id,
+                        f"⚠️ Bracket order fallback: {reason}. Trade executed without stop/take-profit protection.",
+                    )
+                except Exception as _ne:
+                    print(f"[JOURNAL] Failed to record trade notes: {_ne}")
 
         print(f"[TRADE] ═══════════════════════════════════════════════════")
         print(f"[TRADE] Executing trade for {ticker}:")
@@ -259,6 +268,14 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount, use_ai_sizi
                 thesis_break=thesis_break,
                 config=cfg,
             )
+            _exit_gate_label = f"{decision.action}: {decision.reason}"
+            _gate_decision_id = state.get("journal_decision_id")
+            if _gate_decision_id:
+                try:
+                    get_journal().update_decision_exit_gate(_gate_decision_id, _exit_gate_label)
+                except Exception as _ege:
+                    print(f"[JOURNAL] Failed to record exit gate result: {_ege}")
+
             if decision.action == "respect_bracket":
                 print(f"[EXIT_GATE] Respecting bracket for {ticker}: {decision.reason}")
                 state["trading_results"] = {
@@ -525,7 +542,7 @@ def run_analysis(ticker, selected_analysts, research_depth, allow_shorts, quick_
         use_ai_sizing = getattr(app_state, 'use_ai_sizing', True)  # Default to AI sizing enabled
         use_stop_loss = getattr(app_state, 'use_stop_loss', True)  # Default to enabled
         use_take_profit = getattr(app_state, 'use_take_profit', True)  # Default to enabled
-        use_bracket_orders = getattr(app_state, 'use_bracket_orders', False)
+        use_bracket_orders = getattr(app_state, 'use_bracket_orders', True)
         print(f"[TRADE] ═══════════════════════════════════════════════════")
         print(f"[TRADE] Trading settings for {ticker}:")
         print(f"[TRADE]   - trade_enabled: {trade_enabled}")

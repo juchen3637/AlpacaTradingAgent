@@ -279,6 +279,7 @@ def _chart_panel(play_id: str, *, is_longterm: bool = False) -> html.Div:
             ),
             html.Div(
                 id={"type": "play-chart", "id": play_id},
+                className="chart-host",
                 style={"width": "100%", "height": "300px"},
             ),
             dcc.Store(id={"type": "play-chart-payload", "id": play_id}),
@@ -287,9 +288,16 @@ def _chart_panel(play_id: str, *, is_longterm: bool = False) -> html.Div:
                 style={"fontSize": "10px", "color": "#475569",
                        "fontStyle": "italic", "marginTop": "4px"},
             ),
+            html.Button(
+                html.Span("fullscreen", className="material-symbols-outlined",
+                          style={"fontSize": "18px", "lineHeight": "1"}),
+                className="chart-fullscreen-btn",
+                title="Fullscreen (Esc to exit)",
+            ),
         ],
         id={"type": "play-chart-wrapper", "id": play_id},
-        style={"display": "none", "marginTop": "12px"},  # hidden by default
+        **{"data-fs-wrapper": "true"},
+        style={"display": "none", "marginTop": "12px", "position": "relative"},
     )
 
 

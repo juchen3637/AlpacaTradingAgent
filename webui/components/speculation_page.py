@@ -34,8 +34,8 @@ SPECULATION_MODEL_OPTIONS: dict[str, list[dict]] = {
     ],
 }
 
-SPECULATION_DEFAULT_PROVIDER = "openai"
-SPECULATION_DEFAULT_MODEL = "gpt-5-mini-2025-08-07"
+SPECULATION_DEFAULT_PROVIDER = "anthropic"
+SPECULATION_DEFAULT_MODEL = "claude-opus-4-8"
 
 
 def _section_header(icon: str, title: str, subtitle: str = ""):

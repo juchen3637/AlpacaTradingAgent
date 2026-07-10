@@ -64,11 +64,23 @@ def create_chart_panel():
 
             # Chart
             html.Div(
-                html.Div(
-                    id="chart-container",
-                    style={"width": "100%", "height": "450px"},
-                ),
-                style={"height": "450px", "width": "100%", "overflow": "hidden"}
+                [
+                    html.Button(
+                        html.Span("fullscreen",
+                                  className="material-symbols-outlined",
+                                  style={"fontSize": "18px", "lineHeight": "1"}),
+                        className="chart-fullscreen-btn",
+                        title="Fullscreen (Esc to exit)",
+                    ),
+                    html.Div(
+                        id="chart-container",
+                        className="chart-host",
+                        style={"width": "100%", "height": "450px"},
+                    ),
+                ],
+                **{"data-fs-wrapper": "true"},
+                style={"height": "450px", "width": "100%", "overflow": "hidden",
+                       "position": "relative"},
             ),
             dcc.Store(id="chart-container-payload"),
 

@@ -152,7 +152,7 @@ def _run_market_hour_loop(symbols, config, hours):
         # health-checks when the AI stops picking them or they fall off the watchlist.
         try:
             open_positions = AlpacaUtils.get_positions_data() or []
-            open_tickers = [p["symbol"] for p in open_positions if p.get("symbol")]
+            open_tickers = [p.get("Symbol") or p.get("symbol") for p in open_positions if p.get("Symbol") or p.get("symbol")]
             if open_tickers:
                 before = set(effective_symbols)
                 effective_symbols = list(dict.fromkeys(effective_symbols + open_tickers))
@@ -173,7 +173,7 @@ def _run_market_hour_loop(symbols, config, hours):
         app_state.use_ai_sizing = config.get('use_ai_sizing', True)
         app_state.use_stop_loss = config.get('use_stop_loss', True)
         app_state.use_take_profit = config.get('use_take_profit', True)
-        app_state.use_bracket_orders = config.get('use_bracket_orders', False)
+        app_state.use_bracket_orders = config.get('use_bracket_orders', True)
 
         # ── Phase 3: per-ticker re-analysis cooldown ──
         # UI-driven Cost Controls override the static defaults; fall back when absent.
@@ -198,6 +198,22 @@ def _run_market_hour_loop(symbols, config, hours):
                 eligible.append(sym)
             else:
                 skipped.append(sym)
+        # Held positions always bypass cooldown — they must be monitored every cycle
+        # so the exit gate can run on them. Entry candidates still respect cooldown.
+        if skipped:
+            retained_skipped = []
+            for sym in skipped:
+                try:
+                    pos_state = AlpacaUtils.get_current_position_state(sym)
+                except Exception:
+                    pos_state = "NEUTRAL"
+                if pos_state in ("LONG", "SHORT"):
+                    eligible.append(sym)
+                    logger.info("[POSITION_GUARD] Held position %s bypasses cooldown (state=%s)", sym, pos_state)
+                else:
+                    retained_skipped.append(sym)
+            skipped = retained_skipped
+
         if skipped:
             logger.info("[REANALYSIS_GATE] Skipping %d ticker(s) within cooldown: %s", len(skipped), skipped)
             for sym in skipped:
@@ -955,7 +971,7 @@ def register_control_callbacks(app):
         app_state.use_ai_sizing = use_ai_sizing if use_ai_sizing is not None else True  # Default to True
         app_state.use_stop_loss = use_stop_loss if use_stop_loss is not None else True  # Default to True
         app_state.use_take_profit = use_take_profit if use_take_profit is not None else True  # Default to True
-        app_state.use_bracket_orders = use_bracket_orders if use_bracket_orders is not None else False
+        app_state.use_bracket_orders = use_bracket_orders if use_bracket_orders is not None else True
 
         # ── Phase 5: Position Management + Cost Controls ──
         # Captured from the new UI sections; threaded into loop_config and market_hour_config
@@ -1061,6 +1077,28 @@ def register_control_callbacks(app):
                     app_state.analysis_running = False
                     return
 
+            def _inject_open_positions(base_symbols):
+                """Add any open Alpaca positions not already in the symbol list.
+
+                Returns a new list; never mutates the input. Initialises state for
+                newly-injected symbols so the UI/agent_statuses tracks them.
+                """
+                try:
+                    open_positions = AlpacaUtils.get_positions_data() or []
+                    open_tickers = [p.get("Symbol") or p.get("symbol") for p in open_positions if p.get("Symbol") or p.get("symbol")]
+                    if open_tickers:
+                        before = set(base_symbols)
+                        result = list(dict.fromkeys(list(base_symbols) + open_tickers))
+                        added = [t for t in open_tickers if t not in before]
+                        if added:
+                            logger.info("[POSITION_GUARD] Added %d open position(s) to run: %s", len(added), added)
+                            for sym in added:
+                                app_state.init_symbol_state(sym)
+                        return result
+                except Exception as exc:
+                    logger.warning("[POSITION_GUARD] Could not fetch open positions: %s", exc)
+                return list(base_symbols)
+
             if market_hour_enabled:
                 market_hour_config = {
                     'analysts_market': analysts_market,
@@ -1109,6 +1147,8 @@ def register_control_callbacks(app):
                 while not app_state.stop_loop:
                     print(f"[LOOP] Starting iteration {loop_iteration}")
 
+                    run_symbols = _inject_open_positions(run_symbols)
+
                     # Run analysis for all symbols with parallel batch processing
                     process_symbols_in_parallel_batches(
                         run_symbols,
@@ -1140,6 +1180,7 @@ def register_control_callbacks(app):
                 print("[LOOP] Loop stopped")
             else:
                 # Single run mode with parallel batch processing
+                run_symbols = _inject_open_positions(run_symbols)
                 print(f"[SINGLE] Starting parallel batch analysis for {len(run_symbols)} symbols (batch_size={batch_size}, batch_delay={batch_delay}s)")
                 process_symbols_in_parallel_batches(
                     run_symbols,

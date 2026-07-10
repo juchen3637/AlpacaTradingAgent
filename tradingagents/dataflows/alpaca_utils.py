@@ -660,6 +660,66 @@ class AlpacaUtils:
             return {"success": False, "error": error_msg}
 
     @staticmethod
+    def place_option_limit_order(contract_symbol: str, side: str, qty: int, limit_price: float) -> dict:
+        """Place a single-leg options limit order by OCC contract symbol.
+
+        Args:
+            contract_symbol: OCC symbol, e.g. "AAPL260620C00185000".
+            side: "buy" or "sell".
+            qty: Number of contracts (whole number, > 0).
+            limit_price: Per-contract limit price (> 0); rounded to cents.
+
+        Returns the standard order-result envelope.
+        """
+        try:
+            qty = int(qty)
+            limit_price = round(float(limit_price), 2)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "qty must be an integer and limit_price a number"}
+        if qty <= 0 or limit_price <= 0:
+            return {"success": False, "error": "qty and limit_price must be positive"}
+
+        try:
+            client = get_alpaca_trading_client()
+            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            order_request = LimitOrderRequest(
+                symbol=contract_symbol,
+                side=order_side,
+                time_in_force=TimeInForce.DAY,
+                qty=qty,
+                limit_price=limit_price,
+            )
+            order = client.submit_order(order_request)
+            return {
+                "success": True,
+                "order_id": order.id,
+                "symbol": order.symbol,
+                "side": side.lower(),
+                "qty": qty,
+                "limit_price": limit_price,
+                "status": getattr(order.status, "value", str(order.status)),
+                "message": f"Submitted {side} {qty}x {contract_symbol} @ {limit_price:.2f}",
+            }
+        except Exception as e:
+            error_msg = f"Error placing options order for {contract_symbol}: {e}"
+            print(error_msg)
+            return {"success": False, "error": error_msg}
+
+    @staticmethod
+    def place_strangle(
+        call_symbol: str, call_limit: float, put_symbol: str, put_limit: float, qty: int
+    ) -> dict:
+        """Place a long strangle as two single-leg limit BUY orders (call + put).
+
+        Legs are submitted independently — one can fill while the other rejects —
+        so each leg's result is reported separately.
+        """
+        return {
+            "call": AlpacaUtils.place_option_limit_order(call_symbol, "buy", qty, call_limit),
+            "put": AlpacaUtils.place_option_limit_order(put_symbol, "buy", qty, put_limit),
+        }
+
+    @staticmethod
     def close_position(symbol: str, percentage: float = 100.0) -> dict:
         """
         Close a position (partially or completely)

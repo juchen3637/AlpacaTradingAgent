@@ -3177,3 +3177,75 @@ body .Select__multi-value__remove:hover {
         white-space: nowrap;
     }
 }
+
+/* ==========================================================
+   CHART FULLSCREEN
+   ========================================================== */
+
+/* Fullscreen overlay — applied to any [data-fs-wrapper] */
+[data-fs-wrapper].chart-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0F172A;
+    padding: 8px;
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Chart host fills remaining height; use .chart-host on every LWC div */
+[data-fs-wrapper].chart-fullscreen .chart-host {
+    flex: 1 !important;
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+/* Lock body scroll while any chart is fullscreen */
+body.chart-fullscreen-active {
+    overflow: hidden;
+}
+
+/* Expand/collapse button — absolute inside the wrapper */
+.chart-fullscreen-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    border-radius: 6px;
+    color: #94A3B8;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    line-height: 1;
+}
+
+.chart-fullscreen-btn:hover {
+    color: #F1F5F9;
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Larger touch target on touch devices */
+@media (pointer: coarse) {
+    .chart-fullscreen-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* More prominent when chart is fullscreen */
+[data-fs-wrapper].chart-fullscreen .chart-fullscreen-btn {
+    top: 8px;
+    right: 8px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #F1F5F9;
+    z-index: 10001;
+}

@@ -302,3 +302,19 @@ class TestLogStatesDictEviction:
             )
         finally:
             _stop_patches(patches, ctn_patch)
+
+
+class TestCreateInitialStateReports:
+    """All analyst report fields must be pre-seeded so downstream agents that
+    read state['<x>_report'] never KeyError when an analyst isn't selected.
+    Regression: macro_report was omitted -> KeyError('macro_report')."""
+
+    @pytest.mark.unit
+    def test_all_report_fields_seeded_empty(self):
+        from tradingagents.graph.propagation import Propagator
+
+        state = Propagator().create_initial_state("AAPL", "2026-06-18")
+        for field in ("market_report", "sentiment_report", "news_report",
+                      "fundamentals_report", "macro_report"):
+            assert field in state, f"{field} missing from initial state"
+            assert state[field] == ""

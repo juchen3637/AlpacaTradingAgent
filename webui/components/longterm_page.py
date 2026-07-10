@@ -350,6 +350,7 @@ def _chart_panel():
             ),
             html.Div(
                 id="lt-chart",
+                className="chart-host",
                 style={"width": "100%", "height": "400px"},
             ),
             dcc.Store(id="lt-chart-payload"),
@@ -358,9 +359,16 @@ def _chart_panel():
                 style={"fontSize": "11px", "color": "#64748B",
                        "fontStyle": "italic", "marginTop": "4px"},
             ),
+        html.Button(
+            html.Span("fullscreen", className="material-symbols-outlined",
+                      style={"fontSize": "18px", "lineHeight": "1"}),
+            className="chart-fullscreen-btn",
+            title="Fullscreen (Esc to exit)",
+        ),
         ],
         id="lt-chart-wrapper",
-        style={"display": "none"},  # hidden until thesis renders
+        **{"data-fs-wrapper": "true"},
+        style={"display": "none", "position": "relative"},
     )
 
 

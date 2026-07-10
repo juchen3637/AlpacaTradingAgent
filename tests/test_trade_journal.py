@@ -287,3 +287,20 @@ def test_decision_records_are_immutable():
     rec = _decision()
     with pytest.raises(Exception):
         rec.ticker = "AMD"  # frozen dataclass
+
+
+@pytest.mark.unit
+def test_get_decisions_source_accepts_list(journal):
+    journal.record_decision(_decision(ticker="AAA", signal="BUY", source="agent"))
+    journal.record_decision(_decision(ticker="BBB", signal="BUY", source="scanner"))
+    journal.record_decision(_decision(ticker="CCC", signal="BUY", source="backfill"))
+    journal.record_decision(_decision(ticker="DDD", signal="BUY", source="ghetto_sd"))
+
+    both = journal.get_decisions(source=["agent", "backfill"])
+    assert {d["ticker"] for d in both} == {"AAA", "CCC"}
+
+    single = journal.get_decisions(source="scanner")
+    assert {d["ticker"] for d in single} == {"BBB"}
+
+    gsd = journal.get_decisions(source=["ghetto_sd"])
+    assert {d["ticker"] for d in gsd} == {"DDD"}

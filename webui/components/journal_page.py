@@ -52,6 +52,18 @@ def _stat_card(card_id: str, label: str, icon: str):
 def create_journal_page():
     """Create the full journal page with trade log, filters, and decision drill-down."""
     return html.Div([
+        # Tabs: separate the log by source (Analysis / Day Trading / Ghetto SD)
+        dbc.Tabs(
+            id="journal-tab",
+            active_tab="agent",
+            className="mb-4 journal-tabs",
+            children=[
+                dbc.Tab(label="Analysis", tab_id="agent"),
+                dbc.Tab(label="Day Trading", tab_id="scanner"),
+                dbc.Tab(label="Ghetto SD Options", tab_id="ghetto_sd"),
+            ],
+        ),
+
         # Row 1: Summary stats
         dbc.Row([
             _stat_card("journal-total-decisions", "Total Decisions", "fact_check"),
@@ -98,23 +110,6 @@ def create_journal_page():
                             clearable=False,
                         ),
                     ], xs=12, lg=2),
-                    dbc.Col([
-                        html.Label("Source", style={"fontSize": "11px",
-                                                    "color": "#94A3B8", "fontWeight": "600",
-                                                    "textTransform": "uppercase",
-                                                    "letterSpacing": "0.5px"}),
-                        dcc.Dropdown(
-                            id="journal-source-filter",
-                            options=[
-                                {"label": "All sources", "value": "ALL"},
-                                {"label": "Scanner (paper trades)", "value": "scanner"},
-                                {"label": "Agent (LLM decisions)", "value": "agent"},
-                                {"label": "Backfill (Alpaca history)", "value": "backfill"},
-                            ],
-                            value="ALL",
-                            clearable=False,
-                        ),
-                    ], xs=12, lg=3),
                     dbc.Col([
                         html.Label("Limit", style={"fontSize": "11px",
                                                    "color": "#94A3B8", "fontWeight": "600",
